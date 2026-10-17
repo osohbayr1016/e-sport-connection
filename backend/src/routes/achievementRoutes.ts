@@ -1,3 +1,4 @@
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import Achievement from "../models/Achievement";
 import UserAchievement from "../models/UserAchievement";
@@ -55,7 +56,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Get current user's achievements
    * @access Private
    */
-  fastify.get("/achievements/my-achievements", async (request, reply) => {
+  fastify.get("/achievements/my-achievements", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { status } = request.query as any;
       const userId = (request as any).user?.id;
@@ -92,7 +93,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Claim achievement rewards
    * @access Private
    */
-  fastify.post("/achievements/claim/:achievementId", async (request, reply) => {
+  fastify.post("/achievements/claim/:achievementId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { achievementId } = request.params as { achievementId: string };
       const userId = (request as any).user?.id;
@@ -184,7 +185,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Get current user's badges
    * @access Private
    */
-  fastify.get("/achievements/my-badges", async (request, reply) => {
+  fastify.get("/achievements/my-badges", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { equipped } = request.query as any;
       const userId = (request as any).user?.id;
@@ -221,7 +222,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Equip a badge
    * @access Private
    */
-  fastify.post("/achievements/badges/equip/:badgeId", async (request, reply) => {
+  fastify.post("/achievements/badges/equip/:badgeId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { badgeId } = request.params as { badgeId: string };
       const userId = (request as any).user?.id;
@@ -275,7 +276,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Unequip a badge
    * @access Private
    */
-  fastify.post("/achievements/badges/unequip/:badgeId", async (request, reply) => {
+  fastify.post("/achievements/badges/unequip/:badgeId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { badgeId } = request.params as { badgeId: string };
       const userId = (request as any).user?.id;
@@ -352,7 +353,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Trigger achievement check (for testing)
    * @access Private (Admin only)
    */
-  fastify.post("/achievements/trigger", async (request, reply) => {
+  fastify.post("/achievements/trigger", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { type, data } = request.body as any;
       const userId = (request as any).user?.id;
@@ -395,7 +396,7 @@ const achievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
    * @desc Create sample achievements (for testing)
    * @access Private (Admin only)
    */
-  fastify.post("/achievements/create-sample", async (request, reply) => {
+  fastify.post("/achievements/create-sample", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       await AchievementService.createSampleAchievements();
 

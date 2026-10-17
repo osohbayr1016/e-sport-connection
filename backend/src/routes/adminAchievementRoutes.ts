@@ -1,3 +1,4 @@
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
 import Achievement from "../models/Achievement";
@@ -9,6 +10,10 @@ import { AchievementCategory, AchievementRarity, AchievementType } from "../mode
 import { BadgeType, BadgeRarity } from "../models/Badge";
 
 const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
+  // All routes in this plugin, including GET, require a DB-verified ADMIN.
+  fastify.addHook("preHandler", authenticateToken);
+  fastify.addHook("preHandler", requireAdmin);
+
   // Get all achievements (admin view)
   fastify.get("/admin/achievements", async (request, reply) => {
     try {
