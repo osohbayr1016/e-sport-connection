@@ -1,0 +1,44 @@
+name: "🐛 Алдаа мэдээлэх"
+description: "Ажиллахгүй байгаа үйлдэл эсвэл эвдэрсэн UI-г мэдээлэх"
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Алдааг дахин гаргах боломжтой алхмуудыг бичээрэй.
+        **Нууц үг, хувийн мэдээлэл, access token эсвэл API key бүү оруулаарай.**
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Юу болох ёстой байсан бэ?"
+      validations:
+        required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Үнэндээ юу болсон бэ?"
+      validations:
+        required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Алдааг давтах алхмууд"
+      placeholder: |
+        1. ... хуудас руу орно
+        2. ... товч дарна
+        3. ... алдаа гарна
+      validations:
+        required: true
+  - type: input
+    id: device
+    attributes:
+      label: "Төхөөрөмж ба браузер"
+      placeholder: "iPhone Safari, Windows Chrome гэх мэт"
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Зураг / нэмэлт тайлбар"
+      validations:
+        required: false

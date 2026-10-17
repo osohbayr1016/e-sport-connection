@@ -1,144 +1,38 @@
 "use client";
-
-import { Heart, Github, Twitter, Linkedin, Mail, ArrowUp } from "lucide-react";
-import { useState, useEffect } from "react";
-
+import Link from "next/link";
+import { ArrowUp, ArrowRight, Gamepad2 } from "lucide-react";
+const menus = [
+  { name: "Тоглогчид", href: "/players" },
+  { name: "Багууд", href: "/squads" },
+  { name: "Тэмцээнүүд", href: "/tournaments" },
+  { name: "Мэдээ", href: "/news" },
+  { name: "Бидний тухай", href: "/about" },
+];
 export default function Footer() {
-  const [showScrollTop, setShowScrollTop] = useState(false);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 300);
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  return (
-    <footer className="relative bg-gray-900 text-white overflow-hidden">
-      {/* Main footer content */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {/* Brand Section */}
-          <div className="lg:col-span-2">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="relative">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-lg">ES</span>
-                </div>
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white animate-pulse"></div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  E-Sport Connection
-                </h3>
-                <p className="text-gray-300 text-sm"></p>
-              </div>
-            </div>
-            <p className="text-gray-300 mb-6 max-w-md">
-              E-Sport-д хайртай хэн бүхэнд зориулав.
-            </p>
-            <div className="flex space-x-4">
-              <a
-                href="#"
-                className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg"
-              >
-                <Twitter className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg"
-              >
-                <Github className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg"
-              >
-                <Linkedin className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg"
-              >
-                <Mail className="w-5 h-5" />
-              </a>
-            </div>
-          </div>
-
-          {/* Quick Links */}
-          <div>
-            <h4 className="text-lg font-semibold mb-6 text-white">
-              Холбоосууд
-            </h4>
-            <ul className="space-y-3">
-              {[
-                { name: "Бидний тухай", href: "/about" },
-                { name: "Тоглогчид", href: "/players" },
-                { name: "Мэдээ", href: "/news" },
-                { name: "Тэмцээнүүд", href: "/tournaments" },
-              ].map((link) => (
-                <li key={link.name}>
-                  <a
-                    href={link.href}
-                    className="text-gray-300 hover:text-white transition-colors duration-300 hover:translate-x-1 inline-block"
-                  >
-                    {link.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Support */}
-          <div>
-            <h4 className="text-lg font-semibold mb-6 text-white">Дэмжлэг</h4>
-            <ul className="space-y-3">
-              {[
-                { name: "Тусламжийн Төв", href: "#" },
-                { name: "Бидэнтэй Холбогдох", href: "#" },
-                { name: "Нууцлалын Бодлого", href: "#" },
-                { name: "Үйлчилгээний Нөхцөл", href: "#" },
-              ].map((link) => (
-                <li key={link.name}>
-                  <a
-                    href={link.href}
-                    className="text-gray-300 hover:text-white transition-colors duration-300 hover:translate-x-1 inline-block"
-                  >
-                    {link.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+  return <footer className="border-t border-white/10 bg-[#0a1020] text-white">
+    <div className="mx-auto max-w-7xl px-5 pb-8 pt-14 sm:px-8">
+      <div className="grid gap-10 md:grid-cols-[2fr_1fr]">
+        <div>
+          <Link href="/" className="inline-flex items-center gap-3 text-xl font-black">
+            <span className="rounded-xl bg-violet-600 p-2.5"><Gamepad2 size={24} /></span>E-Sport Connection
+          </Link>
+          <p className="mt-5 max-w-md text-sm leading-7 text-slate-400">Монголын Mobile Legends community. Тоглогчид, багууд, тэмцээн болон шинэ санаануудыг нэгтгэнэ.</p>
+          <Link href="/feedback" className="mt-7 inline-flex items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm font-semibold text-violet-200 transition hover:bg-violet-500/20">
+            Сайт сайжруулах санал өгөх <ArrowRight size={17} />
+          </Link>
         </div>
-
-        {/* Bottom section */}
-        <div className="mt-12 pt-8 border-t border-white/10">
-          <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-            <div className="flex items-center space-x-2 text-gray-300">
-              <span>For all</span>
-              <Heart className="w-4 h-4 text-red-400 fill-current animate-pulse" />
-              <span>Players</span>
-            </div>
-          </div>
-        </div>
+        <nav aria-label="Footer холбоосууд" className="grid grid-cols-2 content-start gap-4 text-sm sm:grid-cols-3 md:grid-cols-2">
+          {menus.map(item => <Link key={item.href} href={item.href} className="text-slate-400 transition hover:text-cyan-200">{item.name}</Link>)}
+          <Link href="/feedback" className="text-violet-300 hover:text-violet-100">Санал хүсэлт</Link>
+        </nav>
       </div>
-
-      {/* Scroll to top button */}
-      {showScrollTop && (
-        <button
-          onClick={scrollToTop}
-          className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 z-50 flex items-center justify-center"
-        >
-          <ArrowUp className="w-5 h-5 text-white" />
+      <div className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-7">
+        <p className="text-xs text-slate-500">© {new Date().getFullYear()} E-Sport Connection · Community driven</p>
+        <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs text-slate-300 hover:bg-white/5" aria-label="Хуудасны эхэнд буцах">
+          Дээш буцах <ArrowUp size={16} aria-hidden="true" />
         </button>
-      )}
-    </footer>
-  );
+      </div>
+    </div>
+  </footer>;
 }

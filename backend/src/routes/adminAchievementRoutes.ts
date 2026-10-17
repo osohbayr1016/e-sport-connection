@@ -1,4 +1,3 @@
-import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
 import Achievement from "../models/Achievement";
@@ -6,16 +5,14 @@ import Badge from "../models/Badge";
 import UserAchievement from "../models/UserAchievement";
 import UserBadge from "../models/UserBadge";
 import User from "../models/User";
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { AchievementCategory, AchievementRarity, AchievementType } from "../models/Achievement";
 import { BadgeType, BadgeRarity } from "../models/Badge";
 
 const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
-  // All routes in this plugin, including GET, require a DB-verified ADMIN.
-  fastify.addHook("preHandler", authenticateToken);
-  fastify.addHook("preHandler", requireAdmin);
-
+  const adminOnly = { preHandler: [authenticateToken, requireAdmin] };
   // Get all achievements (admin view)
-  fastify.get("/admin/achievements", async (request, reply) => {
+  fastify.get("/admin/achievements", adminOnly, async (request, reply) => {
     try {
       const achievements = await Achievement.find({})
         .populate("rewards.badge")
@@ -35,7 +32,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Create new achievement
-  fastify.post("/admin/achievements", async (request, reply) => {
+  fastify.post("/admin/achievements", adminOnly, async (request, reply) => {
     try {
       const achievementData = request.body as any;
 
@@ -81,7 +78,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Update achievement
-  fastify.put("/admin/achievements/:id", async (request, reply) => {
+  fastify.put("/admin/achievements/:id", adminOnly, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const updateData = request.body as any;
@@ -114,7 +111,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Delete achievement
-  fastify.delete("/admin/achievements/:id", async (request, reply) => {
+  fastify.delete("/admin/achievements/:id", adminOnly, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
 
@@ -143,7 +140,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Get all badges (admin view)
-  fastify.get("/admin/badges", async (request, reply) => {
+  fastify.get("/admin/badges", adminOnly, async (request, reply) => {
     try {
       const badges = await Badge.find({})
         .populate("requirements.achievementId")
@@ -163,7 +160,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Create new badge
-  fastify.post("/admin/badges", async (request, reply) => {
+  fastify.post("/admin/badges", adminOnly, async (request, reply) => {
     try {
       const badgeData = request.body as any;
 
@@ -210,7 +207,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Update badge
-  fastify.put("/admin/badges/:id", async (request, reply) => {
+  fastify.put("/admin/badges/:id", adminOnly, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const updateData = request.body as any;
@@ -243,7 +240,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Delete badge
-  fastify.delete("/admin/badges/:id", async (request, reply) => {
+  fastify.delete("/admin/badges/:id", adminOnly, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
 
@@ -272,7 +269,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Get user progress for all achievements
-  fastify.get("/admin/user-progress/:userId", async (request, reply) => {
+  fastify.get("/admin/user-progress/:userId", adminOnly, async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
 
@@ -301,7 +298,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Get all users with their achievement progress
-  fastify.get("/admin/users-progress", async (request, reply) => {
+  fastify.get("/admin/users-progress", adminOnly, async (request, reply) => {
     try {
       const { page = 1, limit = 20, search = "" } = request.query as any;
 
@@ -379,7 +376,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Manually award achievement to user
-  fastify.post("/admin/award-achievement", async (request, reply) => {
+  fastify.post("/admin/award-achievement", adminOnly, async (request, reply) => {
     try {
       const { userId, achievementId } = request.body as any;
 
@@ -445,7 +442,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Manually award badge to user
-  fastify.post("/admin/award-badge", async (request, reply) => {
+  fastify.post("/admin/award-badge", adminOnly, async (request, reply) => {
     try {
       const { userId, badgeId } = request.body as any;
 
@@ -502,7 +499,7 @@ const adminAchievementRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // Get achievement statistics
-  fastify.get("/admin/achievement-stats", async (request, reply) => {
+  fastify.get("/admin/achievement-stats", adminOnly, async (request, reply) => {
     try {
       const totalAchievements = await Achievement.countDocuments();
       const totalBadges = await Badge.countDocuments();

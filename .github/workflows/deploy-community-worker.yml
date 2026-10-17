@@ -1,0 +1,114 @@
+name: Deploy Cloudflare Community API
+on:
+  pull_request:
+    paths: ["community-worker/**", ".github/workflows/deploy-community-worker.yml"]
+  push:
+    branches: [sport]
+    paths: ["community-worker/**", ".github/workflows/deploy-community-worker.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-worker-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test Worker API
+        working-directory: community-worker
+        run: npm test
+
+  deploy:
+    needs: verify
+    if: ${{ github.event_name != 'pull_request' && vars.COMMUNITY_WORKER_AUTODEPLOY == 'enabled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate Cloudflare configuration (no secret values printed)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ vars.CLOUDFLARE_D1_DATABASE_ID }}
+          WORKER_ORIGIN: ${{ vars.COMMUNITY_WORKER_URL }}
+        run: |
+          node <<'NODE'
+          const id = process.env.D1_DATABASE_ID || "";
+          const token = process.env.CF_TOKEN || "";
+          const account = process.env.CF_ACCOUNT || "";
+          const worker = process.env.WORKER_ORIGIN || "";
+          if (!token || !account) {
+            console.error("Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets.");
+            process.exit(1);
+          }
+          if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) {
+            console.error("Set CLOUDFLARE_D1_DATABASE_ID to the real D1 UUID.");
+            process.exit(1);
+          }
+          try {
+            const url = new URL(worker);
+            if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw Error("Invalid Worker URL");
+          } catch {
+            console.error("Set COMMUNITY_WORKER_URL to the HTTPS Worker origin.");
+            process.exit(1);
+          }
+          NODE
+      - name: Prepare ephemeral Wrangler config
+        env:
+          D1_DATABASE_ID: ${{ vars.CLOUDFLARE_D1_DATABASE_ID }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const target = "community-worker/wrangler.toml";
+          const template = fs.readFileSync(target + ".example", "utf8");
+          if (!template.includes("REPLACE_WITH_REAL_D1_DATABASE_UUID")) process.exit(1);
+          fs.writeFileSync(target, template.replace("REPLACE_WITH_REAL_D1_DATABASE_UUID", process.env.D1_DATABASE_ID));
+          NODE
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: community-worker
+          command: d1 migrations apply e-sport-community --remote
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: community-worker
+          command: deploy
+      - name: Verify Worker health
+        env:
+          WORKER_ORIGIN: ${{ vars.COMMUNITY_WORKER_URL }}
+        run: |
+          node <<'NODE'
+          async function verify() {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const response = await fetch(process.env.WORKER_ORIGIN + "/health", { signal: AbortSignal.timeout(7000), cache: "no-store" });
+                const body = await response.json();
+                if (response.ok && body.status === "ready") {
+                  console.log("Cloudflare Worker ready and D1 reachable.");
+                  return;
+                }
+              } catch { /* retry Cloudflare propagation */ }
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+            console.error("Cloudflare readiness failed; inspect D1 and Worker secrets.");
+            process.exit(1);
+          }
+          verify();
+          NODE

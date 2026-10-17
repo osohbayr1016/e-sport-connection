@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../contexts/SocketContext";
 import { API_ENDPOINTS } from "@/config/api";
@@ -27,6 +27,8 @@ export const useNotifications = () => {
   const [loading, setLoading] = useState(false);
   const [processingNotifications, setProcessingNotifications] = useState<Set<string>>(new Set());
   const [markingAllAsSeen, setMarkingAllAsSeen] = useState(false);
+  // Ref guards same-tick requests; React state alone updates asynchronously.
+  const markingAllRef = useRef(false);
 
   // Fetch notifications from API
   const fetchNotifications = useCallback(async () => {
@@ -191,10 +193,12 @@ export const useNotifications = () => {
       return;
     }
 
-    if (markingAllAsSeen) {
+    if (markingAllRef.current) {
       console.warn("Already marking all notifications as seen");
       return;
     }
+
+    markingAllRef.current = true;
 
     // Store current state for potential rollback
     const currentNotifications = notifications;
@@ -244,6 +248,7 @@ export const useNotifications = () => {
         setUnreadCount(currentUnreadCount);
       }
     } finally {
+      markingAllRef.current = false;
       setMarkingAllAsSeen(false);
     }
   };

@@ -83,7 +83,7 @@ describe('markAllAsSeen functionality', () => {
     });
 
     // Should only be called once
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect((global.fetch as jest.Mock).mock.calls.filter(([, options]) => options?.method === "PATCH")).toHaveLength(1);
   });
 
   it('should handle API failure with rollback', async () => {

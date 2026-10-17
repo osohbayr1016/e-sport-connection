@@ -5,8 +5,12 @@ const source = (file) => readFileSync(new URL("../../backend/src/routes/" + file
 
 test("admin achievement routes authenticate and authorize all requests", () => {
   const code = source("adminAchievementRoutes.ts");
-  assert.ok(code.includes('fastify.addHook("preHandler", authenticateToken)'));
-  assert.ok(code.includes('fastify.addHook("preHandler", requireAdmin)'));
+  const hookBased = code.includes('fastify.addHook("preHandler", authenticateToken)') &&
+    code.includes('fastify.addHook("preHandler", requireAdmin)');
+  const routeBased = code.includes('const adminOnly = { preHandler: [authenticateToken, requireAdmin] }') &&
+    [...code.matchAll(/fastify\.(?:get|post|put|delete)\("[^"]+", ([^\n]+)$/gm)]
+      .every(([, options]) => options.startsWith("adminOnly,"));
+  assert.ok(hookBased || routeBased, "Every admin achievement handler must be protected");
 });
 
 test("credit mutations require admin and valid non-negative credit", () => {

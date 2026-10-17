@@ -20,9 +20,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "E-Sport Connection - Level Up Your Game",
+  title: "E-Sport Connection | Монголын Mobile Legends Community",
   description:
-    "Connect with top coaches, track your progress, and dominate the competitive gaming scene. Your journey to becoming a pro starts here.",
+    "Монголын Mobile Legends community. Тоглогчид, багууд, тэмцээнүүд болон шинэ боломжийн саналууд.",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -39,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="transition-colors duration-300">
+    <html lang="mn" className="transition-colors duration-300">
       <head>
         <Script
           async

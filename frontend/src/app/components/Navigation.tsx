@@ -4,14 +4,12 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useAuth } from "../contexts/AuthContext";
-import { useSocket } from "../contexts/SocketContext";
 import {
   Sun,
   Moon,
   Menu,
   X,
   Search,
-  Bell,
   User,
   Users,
   LogOut,
@@ -29,7 +27,6 @@ import ChatModal from "./ChatModal";
 export default function Navigation() {
   const { isDarkMode, toggleDarkMode, isLoaded } = useDarkMode();
   const { user, logout, hasProfile } = useAuth();
-  const { isConnected } = useSocket();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInviteFriendModalOpen, setIsInviteFriendModalOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -106,18 +103,18 @@ export default function Navigation() {
   // Main navigation items (always visible)
   const mainNavItems: Array<{ name: string; href: string; icon?: string }> = [
     { name: "Нүүр", href: "/" },
-    { name: "Тоглогчид", href: "/players" },
-    { name: "Мэдээ", href: "/news" },
     { name: "Тэмцээнүүд", href: "/tournaments" },
-    { name: "Live Streams", href: "/live-streams" },
-    { name: "Shopping", href: "/shopping" },
-    { name: "Leaderboard", href: "/leaderboard" },
-    { name: "Бидний", href: "/about" },
+    { name: "Тоглогчид", href: "/players" },
+    { name: "Багууд", href: "/squads" },
+    { name: "Санал хүсэлт", href: "/feedback" },
   ];
 
-  // Additional navigation items (in dropdown)
   const moreNavItems = [
-    { name: "Squads", href: "/squads" },
+    { name: "Мэдээ", href: "/news" },
+    { name: "Live Streams", href: "/live-streams" },
+    { name: "Leaderboard", href: "/leaderboard" },
+    { name: "Бидний тухай", href: "/about" },
+    { name: "Shopping", href: "/shopping" },
     { name: "Matchmaking", href: "/matchmaking" },
     { name: "Divisions", href: "/divisions" },
     { name: "Achievements", href: "/achievements" },
@@ -142,7 +139,7 @@ export default function Navigation() {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-md border-b border-gray-800 transition-colors duration-300">
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-[#080d19]/95 backdrop-blur-xl transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <motion.div
@@ -151,13 +148,13 @@ export default function Navigation() {
             >
               <Link
                 href="/"
-                className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent transition-all duration-300"
+                className="text-xl xl:text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent transition-all duration-300"
               >
                 E-Sport Connection
               </Link>
             </motion.div>
 
-            <div className="hidden md:flex items-center space-x-6">
+            <div className="hidden xl:flex items-center space-x-4">
               {/* Main Navigation Items */}
               {mainNavItems.map((item) => (
                 <Link
@@ -182,7 +179,9 @@ export default function Navigation() {
               {moreNavItems.length > 0 && (
                 <div className="relative">
                   <button
-                    onMouseEnter={() => setIsMoreMenuOpen(true)}
+                    onClick={() => setIsMoreMenuOpen((open) => !open)}
+                    aria-expanded={isMoreMenuOpen}
+                    aria-label="Бусад цэс"
                     onMouseLeave={() => setIsMoreMenuOpen(false)}
                     className="flex items-center space-x-1 text-gray-300 hover:text-blue-400 transition-colors duration-200 font-medium"
                   >
@@ -221,6 +220,7 @@ export default function Navigation() {
             <div className="hidden md:flex items-center space-x-4">
               <motion.button
                 onClick={() => setIsSearchModalOpen(true)}
+                aria-label="Хайлт нээх"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="p-2 text-gray-400 hover:text-blue-400 transition-colors duration-200"
@@ -231,18 +231,6 @@ export default function Navigation() {
               <NotificationCenter
                 onMessageNotificationClick={handleOpenChatFromNotification}
               />
-
-              {/* Connection Status Indicator - Always visible on desktop */}
-              <div className="hidden md:flex items-center space-x-2">
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    isConnected ? "bg-green-500" : "bg-red-500"
-                  }`}
-                />
-                <span className="text-xs text-gray-400">
-                  {isConnected ? "Connected" : "Disconnected"}
-                </span>
-              </div>
 
               {user ? (
                 <div className="flex items-center space-x-2">
@@ -271,9 +259,11 @@ export default function Navigation() {
             </div>
 
             {/* Mobile menu button */}
-            <div className="md:hidden">
+            <div className="xl:hidden">
               <motion.button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                aria-label={isMobileMenuOpen ? "Цэс хаах" : "Цэс нээх"}
+                aria-expanded={isMobileMenuOpen}
                 whileTap={{ scale: 0.95 }}
                 className="p-2 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors duration-200"
               >
@@ -294,9 +284,9 @@ export default function Navigation() {
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
-                className="md:hidden overflow-hidden"
+                className="xl:hidden overflow-hidden"
               >
-                <div className="py-4 space-y-4 border-t border-gray-800">
+                <div className="max-h-[calc(100vh-4rem)] overflow-y-auto py-4 space-y-4 border-t border-gray-800">
                   {/* Main Navigation Items */}
                   {mainNavItems.map((item) => (
                     <Link
@@ -334,12 +324,7 @@ export default function Navigation() {
                       <Search className="w-5 h-5" />
                     </motion.button>
 
-                    <motion.button
-                      whileTap={{ scale: 0.95 }}
-                      className="p-2 text-gray-400 hover:text-blue-400 transition-colors duration-200"
-                    >
-                      <Bell className="w-5 h-5" />
-                    </motion.button>
+
                   </div>
 
                   {/* Mobile User Actions */}

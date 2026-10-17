@@ -1,0 +1,17 @@
+name = "e-sport-community"
+main = "src/index.mjs"
+compatibility_date = "2026-10-01"
+
+# Copy to wrangler.toml, create a D1 database, and enter its real UUID.
+# Never commit real admin tokens or salts.
+[[d1_databases]]
+binding = "DB"
+database_name = "e-sport-community"
+database_id = "REPLACE_WITH_REAL_D1_DATABASE_UUID"
+migrations_dir = "migrations"
+
+[vars]
+ALLOWED_ORIGIN = "https://e-sport-connection.vercel.app"
+
+[triggers]
+crons = ["0 0 * * *"]
