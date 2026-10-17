@@ -26,6 +26,13 @@ Current project scope: restore a useful Mobile Legends community website without
 - Check historical logs and list existing ADMIN users for unauthorized roles before reactivation. Rotate JWT_SECRET to invalidate suspect sessions and implement password reset/notification if compromise is found.
 - Backend fix is NOT live until the updated backend actually deploys; fixing the Vercel frontend alone cannot protect the old Render backend.
 
+## Cycle 2: testing and safety
+- CI baseline: Worker tests passed; frontend Next.js build passed; frontend Jest failed on misnamed sample suite, obsolete unsupported division levels, and duplicate-notifications test.
+- Fix Jest alias typo, replace misnamed sample suite with actual DivisionService test and move example to .examples.ts, align DivisionCoinImage test cases with actual SILVER/GOLD/DIAMOND enums.
+- Prevent same-tick duplicate mark-all PATCH submissions using a synchronous ref guard and correct test to distinguish background fetches from PATCH calls.
+- Disable highly destructive clear-all operations in both Fastify and Next.js, returning HTTP 410. Retain authenticated admin user management for ordinary maintenance.
+- Prior commit in this PR removed unauthenticated /api/users/update-role; independently verify the live legacy Render backend is redeployed or block it there as well.
+
 ## Important deployment blockers and next steps
 1. **MUST DO FIRST:** Rotate leaked credentials found in tracked .env files (MongoDB credentials, API keys, session secrets, Cloudinary/OAuth tokens etc.). Never print or commit the values. Safely remove tracked secrets, dev DB, and node_modules from the repository and add root .gitignore; removing does NOT rewrite history.
 2. Review this feature branch's changed files and CI. Fix failures before merge.
