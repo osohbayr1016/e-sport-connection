@@ -1,0 +1,17 @@
+**/node_modules/
+**/.next/
+**/.wrangler/
+**/coverage/
+**/*.tsbuildinfo
+.DS_Store
+**/.DS_Store
+**/.env
+**/.env.*
+!**/.env.example
+!**/env.example
+**/.dev.vars
+**/*.pem
+**/*.db
+**/*.db-shm
+**/*.db-wal
+community-worker/wrangler.toml
