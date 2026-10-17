@@ -1,22 +1,24 @@
-================================================================================
-  COPY THIS CONNECTION STRING TO RENDER
-================================================================================
+E-Sport Connection — MongoDB / Render credential recovery
 
-mongodb+srv://osohbayar:5Fcy02ZLLpG7GYRO@mentormeet.xfipt6t.mongodb.net/e-sport-connection?retryWrites=true&w=majority
+SECURITY WARNING: A database connection string was historically committed to
+this PUBLIC GitHub repository (backend/render.yaml, docs, examples and env files).
+Removing it from the current tree does NOT revoke the old MongoDB user or remove
+the URL from Git history.
 
-================================================================================
-  WHERE TO PASTE IT:
-================================================================================
+REQUIRED ACTIONS BEFORE RESUMING THE LEGACY BACKEND
+1. In MongoDB Atlas: revoke / rotate the exposed database user's password. Prefer
+   creating a NEW app-specific least-privilege database user, then disable the
+   exposed user. Restrict Atlas network access appropriately.
+2. In Render dashboard > e-sport-connection-backend > Environment: set MONGODB_URI
+   to the NEW connection string as a secret ENV var (never a tracked YAML value).
+   Example only: mongodb+srv://<username>:<password>@<cluster>/<database>
+3. Rotate JWT_SECRET and SESSION_SECRET (revoke any suspect sessions); rotate
+   other credentials found in historical .env files (OAuth, Cloudinary etc).
+4. Redeploy the Render backend from the patched default 'sport' branch, and
+   confirm /health plus that unauthenticated role grants fail.
+5. Audit existing ADMIN accounts, recent sign-ins and unusual DB activity.
+6. For complete Git history remediation, coordinate a deliberate history rewrite
+   and GitHub secret-scan review after rotation; do NOT force-push shared history
+   or rely on simply deleting a file.
 
-1. Go to: https://dashboard.render.com
-2. Click: e-sport-connection-backend
-3. Click: Environment (left sidebar)
-4. Find: MONGODB_URI
-5. Click: Edit (pencil icon)
-6. Paste: The connection string above
-7. Click: Save Changes
-
-Render will auto-deploy and your MongoDB connection will work! ✅
-
-================================================================================
-
+The code repository must never contain real credential values.

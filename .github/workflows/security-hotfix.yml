@@ -8,6 +8,10 @@ on:
       - "frontend/src/app/admin-setup/page.tsx"
       - "frontend/src/app/components/Navigation.tsx"
       - "security/tests/**"
+      - "backend/render.yaml"
+      - "backend/env.example"
+      - "COPY_THIS_TO_RENDER.txt"
+      - "DEPLOYMENT_GUIDE.md"
       - ".github/workflows/security-hotfix.yml"
   push:
     branches: [sport]
