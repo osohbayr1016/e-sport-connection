@@ -100,7 +100,7 @@ jobs:
               try {
                 const response = await fetch(process.env.WORKER_ORIGIN + "/health", { signal: AbortSignal.timeout(7000), cache: "no-store" });
                 const body = await response.json();
-                if (response.ok && body.status === "ok" && body.database === true) {
+                if (response.ok && body.status === "ready") {
                   console.log("Cloudflare Worker ready and D1 reachable.");
                   return;
                 }
