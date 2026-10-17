@@ -9,6 +9,10 @@ on:
       - "frontend/src/app/page.tsx"
       - "frontend/src/app/components/Navigation.tsx"
       - ".github/workflows/community-feedback.yml"
+      - "backend/src/controllers/authController.ts"
+      - "backend/src/routes/userRoutes.ts"
+      - "frontend/src/app/admin-setup/page.tsx"
+      - "security/tests/**"
   push:
     branches: [sport]
     paths:
@@ -30,6 +34,8 @@ jobs:
       - name: Test feedback API
         working-directory: community-worker
         run: npm test
+      - name: Verify authorization regression guards
+        run: node --test security/tests/*.test.mjs
   frontend:
     runs-on: ubuntu-latest
     steps:

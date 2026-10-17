@@ -132,7 +132,7 @@ export default function Navigation() {
 
   // Add admin link if user is admin
   const isAdmin =
-    user?.role === "ADMIN" || user?.email === "admin@esport-connection.com"; // Replace with your admin email
+    user?.role === "ADMIN"; // Replace with your admin email
   if (isAdmin) {
     moreNavItems.push({ name: "Admin", href: "/admin" });
   }

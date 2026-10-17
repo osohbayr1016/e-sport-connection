@@ -20,6 +20,12 @@ Current project scope: restore a useful Mobile Legends community website without
 - New /feedback frontend and redesigned Mobile Legends-first homepage; navigation entry to feedback.
 - GitHub Actions workflow for Worker node tests and frontend build/Jest checks.
 
+## Security finding: public administrator privilege escalation
+- Former public registration accepted ADMIN and unauthenticated PUT /api/users/update-role could grant ADMIN to any email.
+- Closed both attack paths in this branch: registration now rejects ADMIN and public /update-role route is deleted. Removed the public /admin-setup helper page; admin UI link now uses role only.
+- Check historical logs and list existing ADMIN users for unauthorized roles before reactivation. Rotate JWT_SECRET to invalidate suspect sessions and implement password reset/notification if compromise is found.
+- Backend fix is NOT live until the updated backend actually deploys; fixing the Vercel frontend alone cannot protect the old Render backend.
+
 ## Important deployment blockers and next steps
 1. **MUST DO FIRST:** Rotate leaked credentials found in tracked .env files (MongoDB credentials, API keys, session secrets, Cloudinary/OAuth tokens etc.). Never print or commit the values. Safely remove tracked secrets, dev DB, and node_modules from the repository and add root .gitignore; removing does NOT rewrite history.
 2. Review this feature branch's changed files and CI. Fix failures before merge.
