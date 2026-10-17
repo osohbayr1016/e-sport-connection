@@ -8,6 +8,7 @@ on:
       - "frontend/src/app/admin-setup/page.tsx"
       - "frontend/src/app/components/Navigation.tsx"
       - "security/tests/**"
+      - "backend/src/routes/**"
       - "backend/render.yaml"
       - "backend/env.example"
       - "COPY_THIS_TO_RENDER.txt"

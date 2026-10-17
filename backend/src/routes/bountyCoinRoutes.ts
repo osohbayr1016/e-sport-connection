@@ -5,7 +5,7 @@ import Squad from "../models/Squad";
 import WithdrawRequest from "../models/WithdrawRequest";
 import PurchaseRequest from "../models/PurchaseRequest";
 import { getDivisionInfo } from "../utils/divisionSystem";
-import { authenticateToken } from "../middleware/auth";
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 
 const bountyCoinRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance
@@ -173,7 +173,7 @@ const bountyCoinRoutes: FastifyPluginAsync = async (
   });
 
   // Add transaction to user's bounty coin history
-  fastify.post("/transaction", async (request, reply) => {
+  fastify.post("/transaction", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { userId, type, amount, description } = request.body as {
         userId: string;
@@ -182,6 +182,11 @@ const bountyCoinRoutes: FastifyPluginAsync = async (
         description: string;
       };
 
+      if (!mongoose.Types.ObjectId.isValid(userId) ||
+          !["earn", "spend", "purchase", "withdraw"].includes(type) ||
+          !Number.isFinite(amount) || amount <= 0 || amount > 100000000) {
+        return reply.status(400).send({ success: false, message: "Invalid transaction" });
+      }
       let bountyCoinData = await BountyCoin.findOne({ userId });
 
       if (!bountyCoinData) {
