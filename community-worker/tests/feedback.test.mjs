@@ -106,3 +106,20 @@ test("signed Vercel visitors have independent submission buckets and tampering i
   assert.equal((await worker.fetch(post(valid, forwarded("198.51.100.2")), state)).status, 201);
   assert.equal((await worker.fetch(post(valid, { ...forwarded("198.51.100.3"), "x-community-signature": "a".repeat(64) }), state)).status, 429);
 });
+
+test("scheduled maintenance deletes rate-limit fingerprints older than seven days", async () => {
+  const calls = [];
+  const state = {
+    DB: {
+      prepare(sql) {
+        assert.match(sql, /^DELETE FROM feedback_limits WHERE day < \?/);
+        return { bind(cutoff) { calls.push(cutoff); return { run: async () => ({ meta: { changes: 0 } }) }; } };
+      },
+    },
+  };
+  const promises = [];
+  await worker.scheduled({}, state, { waitUntil(promise) { promises.push(promise); } });
+  await Promise.all(promises);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /^\d{4}-\d{2}-\d{2}$/);
+});

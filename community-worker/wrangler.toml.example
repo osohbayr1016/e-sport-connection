@@ -12,3 +12,6 @@ migrations_dir = "migrations"
 
 [vars]
 ALLOWED_ORIGIN = "https://e-sport-connection.vercel.app"
+
+[triggers]
+crons = ["0 0 * * *"]

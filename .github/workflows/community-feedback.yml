@@ -1,29 +1,52 @@
-name: Community feedback checks
+name: Community platform checks
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "community-worker/**"
       - "frontend/src/app/feedback/**"
+      - "frontend/src/app/tournaments/**"
+      - "frontend/src/lib/communityRead.ts"
       - "frontend/src/app/api/community/**"
       - "frontend/src/app/page.tsx"
       - "frontend/src/app/components/Navigation.tsx"
-      - ".github/workflows/community-feedback.yml"
+      - "frontend/src/app/admin-setup/page.tsx"
       - "backend/src/controllers/authController.ts"
       - "backend/src/routes/userRoutes.ts"
-      - "frontend/src/app/admin-setup/page.tsx"
+      - "backend/src/routes/adminRoutes.ts"
       - "security/tests/**"
+      - ".github/workflows/community-feedback.yml"
   push:
     branches: [sport]
     paths:
       - "community-worker/**"
       - "frontend/src/app/feedback/**"
+      - "frontend/src/app/tournaments/**"
+      - "frontend/src/lib/communityRead.ts"
       - "frontend/src/app/api/community/**"
       - "frontend/src/app/page.tsx"
       - "frontend/src/app/components/Navigation.tsx"
+      - "security/tests/**"
       - ".github/workflows/community-feedback.yml"
 
+permissions:
+  contents: read
+
 jobs:
+  repository-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked secrets and vendored dependencies
+        shell: bash
+        run: |
+          suspect="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.env($|\.)|\.(db|sqlite)$' | grep -v -E '(^|/)\.env\.example$' || true)"
+          if [ -n "$suspect" ]; then
+            echo "::error::Tracked secret or generated files found"
+            echo "$suspect"
+            exit 1
+          fi
   worker:
     runs-on: ubuntu-latest
     steps:
@@ -31,10 +54,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Test feedback API
+      - name: Test community Worker API
         working-directory: community-worker
         run: npm test
-      - name: Verify authorization regression guards
+      - name: Validate D1 migrations
+        working-directory: community-worker
+        run: python3 tests/check_migrations.py
+      - name: Test authorization regression guards
         run: node --test security/tests/*.test.mjs
   frontend:
     runs-on: ubuntu-latest

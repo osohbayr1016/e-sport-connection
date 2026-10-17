@@ -38,3 +38,16 @@ Back up D1 via Cloudflare before destructive migrations. This migration does not
 node --test tests/*.test.mjs
 
 NOTE: This repository cannot self-provision your Cloudflare account or configure your Vercel environment. The two account-side bindings above are required before live submissions will work.
+
+## Tournament catalog (D1)
+
+Apply both migrations before deploying. The tournament list is **real data only**; the database intentionally has no sample tournaments. The frontend displays an honest empty state until a verified event is published.
+
+- GET /api/tournaments?limit=20 — published events only (max 50).
+- GET /api/tournaments/<id> — published event detail.
+- POST /api/tournaments — administrator-only creation. Required fields: title, description, format, venue, organizer, game, status, starts_at (UTC ISO 8601), registration_closes_at (nullable UTC ISO 8601), max_teams (2-1024), prize_pool_mnt (nonnegative integer), registration_url (HTTPS or empty), published (boolean). New events should normally start with published=false until verified.
+- POST /api/tournaments/<id>/status — administrator-only change of status and published flag. Requires both status and published fields.
+
+The Worker rejects unsafe registration URL schemes. Registration is hosted externally until a proper user-authenticated tournament registration system is migrated; no fake registration or payment flow is displayed. Do not expose the administrator credential in any browser bundle.
+
+The Worker includes a UTC midnight scheduled task that deletes rate-limit fingerprints older than seven days. Cron configuration is in wrangler.toml.example; ensure it is copied to the actual Wrangler configuration.

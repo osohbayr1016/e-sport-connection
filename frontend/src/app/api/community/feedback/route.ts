@@ -22,6 +22,9 @@ async function hmacHex(secret: string, value: string): Promise<string> {
 }
 
 async function proxy(request: NextRequest, method: "GET" | "POST") {
+  if (method === "POST" && process.env.VERCEL_ENV === "preview") {
+    return NextResponse.json({ success: false, message: "Preview орчинд санал илгээх боломжгүй." }, { status: 403 });
+  }
   const origin = workerOrigin();
   if (!origin) {
     return NextResponse.json({ success: false, message: FAILURE }, { status: 503 });
@@ -66,6 +69,7 @@ async function proxy(request: NextRequest, method: "GET" | "POST") {
       headers: forwardHeaders,
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
+      redirect: "error",
     });
     const responseText = await upstream.text();
     if (responseText.length > 500000) throw new Error("Invalid upstream response size");

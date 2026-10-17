@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, ChevronRight, Lightbulb, MessageSquarePlus, ShieldCheck, Wrench, Bug, Sparkles } from "lucide-react";
 
+const GITHUB_ISSUES_URL = "https://github.com/osohbayr1016/e-sport-connection/issues/new/choose";
+
 type FeedbackType = "feature" | "bug" | "experience";
 type FeedbackStatus = "approved" | "planned" | "in_progress" | "shipped";
 type Feedback = {
@@ -48,6 +50,7 @@ export default function FeedbackPage() {
   const [website, setWebsite] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const [offline, setOffline] = useState(false);
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
@@ -59,9 +62,11 @@ export default function FeedbackPage() {
         if (!response.ok || !data.success || !Array.isArray(data.feedback)) throw new Error(data.message || "Ачаалж чадсангүй.");
         setItems(data.feedback.filter(isFeedback));
         setListError("");
+        setOffline(false);
       } catch (error) {
         if (abort.signal.aborted) return;
         setListError(error instanceof Error ? error.message : "Ачаалж чадсангүй.");
+        setOffline(true);
       } finally {
         if (!abort.signal.aborted) setLoading(false);
       }
@@ -83,8 +88,12 @@ export default function FeedbackPage() {
         body: JSON.stringify({ type, title, description, alias, website }),
       });
       const data: ApiResult = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.message || "Илгээж чадсангүй.");
+      if (!response.ok || !data.success) {
+        if (response.status === 503) setOffline(true);
+        throw new Error(data.message || "Илгээж чадсангүй.");
+      }
       setSuccess(data.message || "Таны санал амжилттай бүртгэгдлээ.");
+      setOffline(false);
       setTitle("");
       setDescription("");
       setAlias("");
@@ -156,6 +165,7 @@ export default function FeedbackPage() {
             </label>
             <div className="absolute -left-[9999px]" aria-hidden="true"><label>Website<input type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} /></label></div>
             {formError && <p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{formError}</p>}
+            {offline && <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-200 underline underline-offset-4 hover:text-white">GitHub Issues дээр санал илгээх (GitHub бүртгэл шаардлагатай) ↗</a>}
             {success && <p role="status" className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200"><CheckCircle2 size={18} className="shrink-0" />{success}</p>}
             <button type="submit" disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-5 py-3.5 font-bold text-white transition hover:bg-violet-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 disabled:cursor-wait disabled:opacity-50">
               {submitting ? "Илгээж байна..." : "Санал илгээх"} <ArrowRight size={18} />
@@ -177,6 +187,8 @@ export default function FeedbackPage() {
               <h3 className="font-bold">Roadmap түр боломжгүй</h3>
               <p className="mt-2 text-sm leading-relaxed text-slate-300">{listError}</p>
               <p className="mt-2 text-xs text-slate-400">Cloudflare үйлчилгээ холбогдсоны дараа саналуудыг харах боломжтой.</p>
+              <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/20">GitHub-ээр санал илгээх <ArrowRight size={16} /></a>
+              <p className="mt-2 text-xs text-slate-500">GitHub бүртгэл шаардлагатай. Энэ нь үндсэн саналын үйлчилгээ сэргэх хүртэлх нөөц хувилбар.</p>
             </div>
           ) : items.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-center">
