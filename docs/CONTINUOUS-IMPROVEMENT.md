@@ -54,3 +54,24 @@ At the start of each cycle inspect sport HEAD, current PR, CI, this file and lat
 ## Cycle 4: readiness verification
 - Worker /health now checks that DB schema can be queried AND required shared-secret/protection configuration is present (fail-closed, no secret details leaked). Added Node regression tests for 200/503 and missing migration.
 - If /health is 503, do not enable public submission; complete Cloudflare + Vercel bindings and verify the full moderated lifecycle first.
+
+
+## Cycle 5: reconciled production security hotfixes and Cloudflare delivery (2026-10-18)
+- **Default sport security PR #3** merged: registration can no longer create ADMIN, public role promotion and admin setup removed. Sport commit ea7c99200c0268efd4fcd4b78f636dc64520dd73; CI green.
+- **Default sport security PR #4** merged: removed checked-in .env/backup/dev DB, replaced embedded live MongoDB URI with Render sync:false, sanitized deployment guides and added credential regression tests. Sport commit 053fe70f477e94628b199a623fdeb167dd7b68df; CI green.
+- **Default sport security PR #5** merged: authenticated admin role required for coin transaction mutations, administrative tournament CRUD/start/disqualify, achievement administration, and registration payment/approval; authenticated squad leadership required for registration/cancellation; direct paid auto-approval disabled. Sport commit 0852ae7ea4a84924528aeb27a6ac4fb72aca5820; CI green.
+- Security hotfixes were merged into the feature branch history with two-parent merge commits, preserving the Cloudflare worker/new UI changes while avoiding overwriting security fixes. PR #2 remains DRAFT, not deployed.
+- Production Cloudflare GitHub Action added: .github/workflows/deploy-community-worker.yml; PR tests run. Auto deploy must be explicitly opted in via repository Actions variable COMMUNITY_WORKER_AUTODEPLOY=enabled; the real account token, account ID, D1 UUID, Worker URL and runtime secrets are still required. Read docs/CLOUDFLARE-DEPLOYMENT.md.
+- Scheduled cycle simultaneously added D1 tournament read API, 0002 migration, import script, status-aware UI, community contribution GitHub issue templates. These are on PR #2, NOT live. Read docs/CYCLE3-TOURNAMENTS.md plus community-worker/MIGRATION.md and TOURNAMENTS.md before modifying.
+- After merge reconciliation at feature commit 6e13a18283a1899eceb5ac2ce168c9f059d91267: Admin role regression and backend typecheck passed, Worker checks passed, Cloudflare deploy job intentionally skipped (not configured), frontend CI was running. Always re-query the LATEST HEAD/CI in the next cycle and do not assume this SHA stays current.
+- Vercel homepage cannot currently be verified from this tool session (external fetch cache miss). No Cloudflare API resource nor Vercel secret environment changes were performed. Do not claim verified production.
+
+### NEXT bounded engineering cycle (prioritized)
+1. Check the latest HEAD of sport and feat/community-feedback-worker-d1, PR #2, newest GitHub Actions run and failures; update this checkpoint with exact SHA/CI facts.
+2. Fix any remaining TypeScript/Jest/Worker CI failures, including static route guard regressions; preserve existing security hotfixes. Never clobber concurrent cycle commits: use update_ref expected_sha.
+3. Review new D1 tournament migration + import script for idempotence, validation, bad payloads, data-loss risk and rollback; do not run against production data until a backup and verified data mapping exist.
+4. Implement a real moderator UI with server-side session authorization (never expose FEEDBACK_ADMIN_TOKEN to browsers), and add safe feedback status transitions, dedup, anti-abuse and accessibility tests.
+5. Identify and repair other unguarded legacy mutations (match scoring, squads, news, rewards) via isolated security PRs with backend typecheck before merge. Do not silently disable end-user registration; test authorized flows.
+6. User-controlled account work: rotate historical leaked Atlas/JWT/OAuth keys and audit ADMIN users/coin and payment records, connect Render to verify backend deployed, configure Cloudflare D1/Worker and Vercel server secrets; absent account connection, remain in draft and use honest 503 fallback.
+
+**Boundaries:** The hourly reminder resumes work but is not an uninterruptible 55-minute compute process; record concrete implementation in each cycle. Stop scheduling after the 08:00 Asia/Ulaanbaatar cycle as requested.
