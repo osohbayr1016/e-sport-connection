@@ -1,3 +1,4 @@
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
 import Tournament from "../models/Tournament";
@@ -131,7 +132,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
   });
 
   // Create tournament (admin only)
-  fastify.post("/", async (request, reply) => {
+  fastify.post("/", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const tournamentData = request.body as any;
 
@@ -209,7 +210,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
   });
 
   // Update tournament (admin only)
-  fastify.put("/:id", async (request, reply) => {
+  fastify.put("/:id", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const updateData = request.body as any;
@@ -256,7 +257,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
   });
 
   // Delete tournament (admin only)
-  fastify.delete("/:id", async (request, reply) => {
+  fastify.delete("/:id", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
 
@@ -358,7 +359,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
   });
 
   // Register squad for tournament
-  fastify.post("/:id/register", async (request, reply) => {
+  fastify.post("/:id/register", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const { squadId, entryFee, currency } = request.body as any;
@@ -372,6 +373,16 @@ const tournamentRoutes: FastifyPluginAsync = async (
         });
       }
 
+      // Legacy quick-registration must never bypass payment verification.
+      if (tournament.tournamentType !== "free" || (tournament.entryFee || 0) > 0) {
+        return reply.status(400).send({
+          success: false,
+          message: "Use tournament-registrations/register for paid tournaments",
+        });
+      }
+      if (!["upcoming", "registration_open"].includes(tournament.status)) {
+        return reply.status(409).send({ success: false, message: "Registration closed" });
+      }
       // Check if tournament is full
       if (tournament.currentSquads >= tournament.maxSquads) {
         return reply.status(400).send({
@@ -403,13 +414,16 @@ const tournamentRoutes: FastifyPluginAsync = async (
         });
       }
 
+      if (squad.leader.toString() !== (request as any).user?.id) {
+        return reply.status(403).send({ success: false, message: "Only the squad leader can register" });
+      }
       // Create tournament registration
       const registration = new TournamentRegistration({
         tournament: id,
         squad: squadId,
         squadLeader: squad.leader,
         squadMembers: squad.members,
-        registrationFee: entryFee || 5000,
+        registrationFee: 0,
         paymentStatus: "paid", // Assuming payment is already processed
         paymentDate: new Date(),
         status: "registered",
@@ -462,7 +476,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
   });
 
   // Start tournament and generate matches (admin only)
-  fastify.post("/:id/start", async (request, reply) => {
+  fastify.post("/:id/start", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
 
@@ -523,7 +537,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
   });
 
   // Disqualify/Ban a squad from a tournament (admin only)
-  fastify.post("/:id/disqualify", async (request, reply) => {
+  fastify.post("/:id/disqualify", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const { squadId, reason, adminId } = request.body as {

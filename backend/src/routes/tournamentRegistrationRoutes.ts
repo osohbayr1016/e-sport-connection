@@ -1,3 +1,4 @@
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import TournamentRegistration from "../models/TournamentRegistration";
 import Tournament from "../models/Tournament";
@@ -17,7 +18,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Get all tournament registrations (admin only)
-  fastify.get("/", async (request, reply) => {
+  fastify.get("/", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const {
         page = 1,
@@ -88,7 +89,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Register squad for tournament
-  fastify.post("/register", async (request, reply) => {
+  fastify.post("/register", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { tournamentId, squadId, squadLeaderId, paymentProof } =
         request.body as any;
@@ -101,6 +102,9 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
         });
       }
 
+      if (squadLeaderId !== (request as any).user?.id) {
+        return reply.status(403).send({ success: false, message: "Only the authenticated squad leader can register" });
+      }
       // Check if tournament exists and registration is open
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
@@ -228,7 +232,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Update payment status (admin only)
-  fastify.put("/:id/payment", async (request, reply) => {
+  fastify.put("/:id/payment", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const { paymentStatus, adminId } = request.body as any;
@@ -270,13 +274,13 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Approve registration (admin only)
-  fastify.put("/:id/approve", async (request, reply) => {
+  fastify.put("/:id/approve", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const { adminId, action, reason } = request.body as any;
 
       // Validate required fields
-      if (!adminId || !action) {
+      if (!action) {
         return reply.status(400).send({
           success: false,
           message: "Admin ID and action are required",
@@ -321,7 +325,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
       if (action === "approve") {
         registration.isApproved = true;
         registration.approvalStatus = "approved";
-        registration.approvedBy = adminId;
+        registration.approvedBy = (request as any).user?.id;
         registration.approvedAt = new Date();
         registration.paymentStatus = "paid";
         registration.paymentDate = new Date();
@@ -422,7 +426,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Cancel registration (squad leader only)
-  fastify.delete("/:id", async (request, reply) => {
+  fastify.delete("/:id", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const { squadLeaderId } = request.body as any;
@@ -435,7 +439,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
         });
       }
 
-      if (registration.squadLeader.toString() !== squadLeaderId) {
+      if (registration.squadLeader.toString() !== (request as any).user?.id || squadLeaderId !== (request as any).user?.id) {
         return reply.status(403).send({
           success: false,
           message: "Only squad leader can cancel registration",
@@ -467,7 +471,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
 
 
   // Get pending tax tournament registrations (admin only)
-  fastify.get("/pending-tax", async (request, reply) => {
+  fastify.get("/pending-tax", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { page = 1, limit = 10 } = request.query as any;
 
