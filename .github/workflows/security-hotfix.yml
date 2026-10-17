@@ -1,0 +1,45 @@
+name: Admin role security regression
+
+on:
+  pull_request:
+    paths:
+      - "backend/src/controllers/authController.ts"
+      - "backend/src/routes/userRoutes.ts"
+      - "frontend/src/app/admin-setup/page.tsx"
+      - "frontend/src/app/components/Navigation.tsx"
+      - "security/tests/**"
+      - ".github/workflows/security-hotfix.yml"
+  push:
+    branches: [sport]
+    paths:
+      - "backend/src/controllers/authController.ts"
+      - "backend/src/routes/userRoutes.ts"
+      - "frontend/src/app/admin-setup/page.tsx"
+      - "frontend/src/app/components/Navigation.tsx"
+      - "security/tests/**"
+      - ".github/workflows/security-hotfix.yml"
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test security/tests/*.test.mjs
+  backend-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+      - name: Typecheck backend
+        working-directory: backend
+        run: npm run type-check

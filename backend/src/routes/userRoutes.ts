@@ -231,58 +231,8 @@ const userRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
     }
   );
 
-  // Update user role (for admin setup - remove in production)
-  fastify.put("/update-role", async (request, reply) => {
-    try {
-      const { email, role } = request.body as { email: string; role: string };
-
-      if (!email || !role) {
-        return reply.status(400).send({
-          success: false,
-          message: "Email and role are required",
-        });
-      }
-
-      const validRoles = ["PLAYER", "COACH", "ORGANIZATION", "ADMIN"];
-      if (!validRoles.includes(role)) {
-        return reply.status(400).send({
-          success: false,
-          message:
-            "Invalid role. Must be one of: PLAYER, COACH, ORGANIZATION, ADMIN",
-        });
-      }
-
-      const user = await User.findOneAndUpdate(
-        { email: email.toLowerCase() },
-        { role },
-        { new: true }
-      );
-
-      if (!user) {
-        return reply.status(404).send({
-          success: false,
-          message: "User not found",
-        });
-      }
-
-      return reply.status(200).send({
-        success: true,
-        message: `User role updated to ${role}`,
-        user: {
-          id: user._id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        },
-      });
-    } catch (error) {
-      console.error("Error updating user role:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Error updating user role",
-      });
-    }
-  });
+  // The former unauthenticated /update-role endpoint has been removed.
+  // Admin role changes must use the authenticated admin-only PATCH /:id route.
 
   // Get all players (public endpoint)
   fastify.get("/players", async (request, reply) => {
