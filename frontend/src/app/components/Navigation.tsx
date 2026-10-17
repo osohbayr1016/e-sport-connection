@@ -110,13 +110,14 @@ export default function Navigation() {
     { name: "Мэдээ", href: "/news" },
     { name: "Тэмцээнүүд", href: "/tournaments" },
     { name: "Live Streams", href: "/live-streams" },
-    { name: "Shopping", href: "/shopping" },
+    { name: "Санал хүсэлт", href: "/feedback" },
     { name: "Leaderboard", href: "/leaderboard" },
     { name: "Бидний", href: "/about" },
   ];
 
   // Additional navigation items (in dropdown)
   const moreNavItems = [
+    { name: "Shopping", href: "/shopping" },
     { name: "Squads", href: "/squads" },
     { name: "Matchmaking", href: "/matchmaking" },
     { name: "Divisions", href: "/divisions" },
