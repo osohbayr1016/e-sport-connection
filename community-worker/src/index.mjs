@@ -115,7 +115,22 @@ export default {
     }
 
     if (path === "/health" && request.method === "GET") {
-      return json({ status: env.DB ? "ok" : "unconfigured", service: "community-feedback", database: Boolean(env.DB) }, env.DB ? 200 : 503, cors);
+      // A bound database is not sufficient: a missing migration or secret
+      // makes writes fail. Health must reflect the ACTUAL submission path.
+      const configured = Boolean(
+        env.DB &&
+        typeof env.ALLOWED_ORIGIN === "string" && env.ALLOWED_ORIGIN.startsWith("https://") &&
+        typeof env.RATE_LIMIT_SALT === "string" && env.RATE_LIMIT_SALT.length >= 32 &&
+        typeof env.COMMUNITY_PROXY_SECRET === "string" && env.COMMUNITY_PROXY_SECRET.length >= 32 &&
+        typeof env.FEEDBACK_ADMIN_TOKEN === "string" && env.FEEDBACK_ADMIN_TOKEN.length >= 32
+      );
+      if (!configured) return json({ status: "unconfigured", service: "community-feedback" }, 503, cors);
+      try {
+        await env.DB.prepare("SELECT id FROM feedback LIMIT 1").first();
+        return json({ status: "ready", service: "community-feedback" }, 200, cors);
+      } catch {
+        return json({ status: "unavailable", service: "community-feedback" }, 503, cors);
+      }
     }
     if (!path.startsWith("/api/feedback")) return error("Not found", 404, cors);
     if (!env.DB) return error("Feedback database is not configured", 503, cors);

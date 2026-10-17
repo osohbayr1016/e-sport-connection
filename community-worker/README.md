@@ -20,7 +20,7 @@ This is an independent **Cloudflare Worker + D1** service. It is intentionally s
 The website's same-origin Next.js route proxies public GET and POST. If the Worker is unavailable or the Vercel environment variable is missing, the UI displays a real service-unavailable state and does not claim submission succeeded.
 
 ## Public API
-- GET /health: ready check, 503 when DB binding is absent
+- GET /health: **200 only when all required secrets, origin, DB binding and feedback migration are present**; otherwise 503. Response omits secret names and values.
 - GET /api/feedback: moderated public list only, no pending/rejected content
 - POST /api/feedback: JSON type (feature|bug|experience), title (8-100), description (20-1200), alias optional (<=40); returns 201 and status pending
 - Request rate limit: 3 submissions per trusted client IP per UTC day. The Vercel proxy signs a daily pseudonymous visitor ID; Worker validates the signature. Direct Worker callers are limited by Cloudflare CF-Connecting-IP. No raw IP persisted. Missing salt, shared proxy secret, or client IP fails closed.

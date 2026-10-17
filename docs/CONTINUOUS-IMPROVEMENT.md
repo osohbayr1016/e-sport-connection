@@ -50,3 +50,7 @@ At the start of each cycle inspect sport HEAD, current PR, CI, this file and lat
 - Tournaments: surface backend failures rather than saying none exist; truthful empty state with link to community feedback.
 - New shared ServiceState for consistent accessible empty/offline messaging; remove dead social/footer links; expand UI CI path triggers.
 - Do not claim production deployment until account bindings and smoke tests are verified.
+
+## Cycle 4: readiness verification
+- Worker /health now checks that DB schema can be queried AND required shared-secret/protection configuration is present (fail-closed, no secret details leaked). Added Node regression tests for 200/503 and missing migration.
+- If /health is 503, do not enable public submission; complete Cloudflare + Vercel bindings and verify the full moderated lifecycle first.

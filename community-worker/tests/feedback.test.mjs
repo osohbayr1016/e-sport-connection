@@ -13,6 +13,10 @@ function mockDatabase() {
     entries,
     prepare(query) {
       return {
+        async first() {
+          if (query === "SELECT id FROM feedback LIMIT 1") return entries[0] || null;
+          throw new Error("unexpected health statement");
+        },
         bind(...args) {
           return {
             async first() {
@@ -56,6 +60,20 @@ test("health fails closed without D1", async () => {
   const response = await worker.fetch(request("/health"), {});
   assert.equal(response.status, 503);
 });
+test("health checks configured secrets and D1 schema rather than merely a binding", async () => {
+  const ready = env();
+  const response = await worker.fetch(request("/health"), ready);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).status, "ready");
+  ready.RATE_LIMIT_SALT = "";
+  assert.equal((await worker.fetch(request("/health"), ready)).status, 503);
+  ready.RATE_LIMIT_SALT = "test_salt_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
+  ready.DB = { prepare() { throw new Error("no such table"); } };
+  const missingTable = await worker.fetch(request("/health"), ready);
+  assert.equal(missingTable.status, 503);
+  assert.equal((await missingTable.json()).status, "unavailable");
+});
+
 test("invalid and cross-origin submissions cannot write", async () => {
   const state = env();
   const invalid = await worker.fetch(post({ ...valid, title: "tiny" }), state);
