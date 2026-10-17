@@ -53,13 +53,36 @@ function validate(payload) {
   return { type: payload.type, title, description, alias };
 }
 
+async function hmacHex(secret, input) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const result = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(result), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function limitSubmission(env, request) {
   if (!env.RATE_LIMIT_SALT || env.RATE_LIMIT_SALT.length < 32) return { configured: false };
-  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-real-ip") || "";
-  // Untrusted forwarded headers are deliberately excluded. Without a trusted IP, refuse writes.
-  if (!ip) return { configured: true, allowed: false };
   const day = new Date().toISOString().slice(0, 10);
-  const fingerprint = await digest(env.RATE_LIMIT_SALT + ":" + day + ":" + ip);
+  let identity = "";
+  const visitor = request.headers.get("x-community-visitor");
+  const signature = request.headers.get("x-community-signature");
+  const proxyDay = request.headers.get("x-community-day");
+
+  if (visitor || signature || proxyDay) {
+    if (!env.COMMUNITY_PROXY_SECRET || env.COMMUNITY_PROXY_SECRET.length < 32) return { configured: false };
+    if (!visitor || !/^[a-f0-9]{64}$/.test(visitor) || !signature || !/^[a-f0-9]{64}$/.test(signature) || proxyDay !== day) {
+      return { configured: true, allowed: false };
+    }
+    const expected = await hmacHex(env.COMMUNITY_PROXY_SECRET, day + ":" + visitor);
+    if (signature !== expected) return { configured: true, allowed: false };
+    identity = "trusted-proxy:" + visitor;
+  } else {
+    // Cloudflare controls CF-Connecting-IP on direct incoming requests.
+    // Do not trust client-supplied X-Real-IP or X-Forwarded-For.
+    const ip = request.headers.get("cf-connecting-ip");
+    if (!ip) return { configured: true, allowed: false };
+    identity = "direct:" + ip;
+  }
+  const fingerprint = await digest(env.RATE_LIMIT_SALT + ":" + day + ":" + identity);
   const allowed = await env.DB.prepare(
     "INSERT INTO feedback_limits (fingerprint, day, count) VALUES (?, ?, 1) " +
     "ON CONFLICT(fingerprint, day) DO UPDATE SET count = count + 1 WHERE count < 3 RETURNING count"
@@ -99,7 +122,9 @@ export default {
 
     try {
       if (path === "/api/feedback" && request.method === "GET") {
-        const admin = url.searchParams.get("scope") === "admin" && (await isAdmin(request, env));
+        const requestedAdmin = url.searchParams.get("scope") === "admin";
+        const admin = requestedAdmin && (await isAdmin(request, env));
+        if (requestedAdmin && !admin) return error("Unauthorized", 401, cors);
         const result = await listFeedback(env, admin);
         return new Response(result.body, { status: result.status, headers: { ...Object.fromEntries(result.headers), ...cors } });
       }

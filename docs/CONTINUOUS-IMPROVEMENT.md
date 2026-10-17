@@ -24,7 +24,7 @@ Current project scope: restore a useful Mobile Legends community website without
 1. **MUST DO FIRST:** Rotate leaked credentials found in tracked .env files (MongoDB credentials, API keys, session secrets, Cloudinary/OAuth tokens etc.). Never print or commit the values. Safely remove tracked secrets, dev DB, and node_modules from the repository and add root .gitignore; removing does NOT rewrite history.
 2. Review this feature branch's changed files and CI. Fix failures before merge.
 3. In Cloudflare account, create D1 e-sport-community and configure real Wrangler UUID, RATE_LIMIT_SALT and FEEDBACK_ADMIN_TOKEN; apply migrations, deploy Worker. Details in community-worker/README.md.
-4. Set Vercel server-only COMMUNITY_API_ORIGIN to deployed Worker origin; redeploy frontend.
+4. Set Vercel server-only COMMUNITY_API_ORIGIN to deployed Worker origin and COMMUNITY_PROXY_SECRET to the same secret configured in Cloudflare; redeploy frontend.
 5. Smoke-test /health, /feedback empty/list states, create -> pending -> admin approve -> public listing, input validation, abuse limit, mobile viewport.
 6. Next cycles: remove unreliable legacy dependence via phased auth, squads, tournament and social data migrations; write data mapping and rollback strategy before touching production MongoDB data.
 7. Next UI cycle: redesign tournament/player and squads views, add explicit service-unavailable states and accessibility audit. Preserve current routes for existing users.

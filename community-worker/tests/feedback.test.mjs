@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createHmac } from "node:crypto";
 import worker from "../src/index.mjs";
 
 function request(path, options = {}) {
@@ -45,7 +46,7 @@ function mockDatabase() {
   };
 }
 const adminToken = "test_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
-const env = () => ({ DB: mockDatabase(), ALLOWED_ORIGIN: "https://e-sport-connection.vercel.app", RATE_LIMIT_SALT: "test_salt_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", FEEDBACK_ADMIN_TOKEN: adminToken });
+const env = () => ({ DB: mockDatabase(), ALLOWED_ORIGIN: "https://e-sport-connection.vercel.app", RATE_LIMIT_SALT: "test_salt_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", FEEDBACK_ADMIN_TOKEN: adminToken, COMMUNITY_PROXY_SECRET: "proxy_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345" });
 function post(body, headers = {}) {
   return request("/api/feedback", { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.1", ...headers }, body: JSON.stringify(body) });
 }
@@ -90,4 +91,18 @@ test("missing salt blocks writes and invalid routes are 404", async () => {
   state.RATE_LIMIT_SALT = "";
   assert.equal((await worker.fetch(post(valid), state)).status, 503);
   assert.equal((await worker.fetch(request("/unknown"), state)).status, 404);
+});
+
+test("signed Vercel visitors have independent submission buckets and tampering is blocked", async () => {
+  const state = env();
+  const day = new Date().toISOString().slice(0, 10);
+  const sign = (value) => createHmac("sha256", state.COMMUNITY_PROXY_SECRET).update(value).digest("hex");
+  function forwarded(ip) {
+    const visitor = sign(day + ":" + ip);
+    return { "x-community-visitor": visitor, "x-community-signature": sign(day + ":" + visitor), "x-community-day": day };
+  }
+  for (let n = 0; n < 3; n++) assert.equal((await worker.fetch(post(valid, forwarded("198.51.100.1")), state)).status, 201);
+  assert.equal((await worker.fetch(post(valid, forwarded("198.51.100.1")), state)).status, 429);
+  assert.equal((await worker.fetch(post(valid, forwarded("198.51.100.2")), state)).status, 201);
+  assert.equal((await worker.fetch(post(valid, { ...forwarded("198.51.100.3"), "x-community-signature": "a".repeat(64) }), state)).status, 429);
 });

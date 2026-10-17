@@ -15,6 +15,12 @@ function workerOrigin(): string | null {
   }
 }
 
+async function hmacHex(secret: string, value: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(signed), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function proxy(request: NextRequest, method: "GET" | "POST") {
   const origin = workerOrigin();
   if (!origin) {
@@ -23,6 +29,7 @@ async function proxy(request: NextRequest, method: "GET" | "POST") {
 
   try {
     let body: string | undefined;
+    const forwardHeaders: Record<string, string> = { accept: "application/json" };
     if (method === "POST") {
       const sourceOrigin = request.headers.get("origin");
       if (sourceOrigin && sourceOrigin !== new URL(request.url).origin) {
@@ -32,6 +39,21 @@ async function proxy(request: NextRequest, method: "GET" | "POST") {
       if (!type.toLowerCase().startsWith("application/json")) {
         return NextResponse.json({ success: false, message: "JSON шаардлагатай." }, { status: 415 });
       }
+      // Vercel overwrites x-vercel-forwarded-for with its trusted client IP.
+      // A per-visitor HMAC lets Worker rate-limit individual visitors instead
+      // of sharing one bucket across all visitors behind Vercel.
+      const secret = process.env.COMMUNITY_PROXY_SECRET;
+      const clientIp = (request.headers.get("x-vercel-forwarded-for") ||
+        (process.env.NODE_ENV !== "production" ? request.headers.get("x-forwarded-for") || "127.0.0.1" : "")).split(",")[0].trim();
+      if (!secret || secret.length < 32 || !clientIp) {
+        return NextResponse.json({ success: false, message: FAILURE }, { status: 503 });
+      }
+      const day = new Date().toISOString().slice(0, 10);
+      const visitor = await hmacHex(secret, day + ":" + clientIp);
+      forwardHeaders["x-community-visitor"] = visitor;
+      forwardHeaders["x-community-signature"] = await hmacHex(secret, day + ":" + visitor);
+      forwardHeaders["x-community-day"] = day;
+      forwardHeaders["content-type"] = "application/json";
       body = await request.text();
       if (body.length > 8192) {
         return NextResponse.json({ success: false, message: "Хүсэлт хэт урт байна." }, { status: 413 });
@@ -41,7 +63,7 @@ async function proxy(request: NextRequest, method: "GET" | "POST") {
     const upstream = await fetch(origin + "/api/feedback", {
       method,
       body,
-      headers: { accept: "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+      headers: forwardHeaders,
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
     });

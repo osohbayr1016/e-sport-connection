@@ -12,8 +12,9 @@ This is an independent **Cloudflare Worker + D1** service. It is intentionally s
 4. Set secrets **on the Worker**:
    - npx wrangler secret put RATE_LIMIT_SALT (strong random value, 32+ chars)
    - npx wrangler secret put FEEDBACK_ADMIN_TOKEN (strong random value, 32+ chars)
+   - npx wrangler secret put COMMUNITY_PROXY_SECRET (same strong random value as Vercel, 32+ chars)
 5. Deploy: npx wrangler deploy
-6. Add Vercel **server-only** environment variable COMMUNITY_API_ORIGIN to the exact HTTPS Worker origin (for example https://your-real-worker.workers.dev). Redeploy the Next.js frontend. Do not put this in NEXT_PUBLIC_ variables.
+6. Add Vercel **server-only** environment variable COMMUNITY_PROXY_SECRET matching the Worker secret. Add **server-only** COMMUNITY_API_ORIGIN to the exact HTTPS Worker origin (for example https://your-real-worker.workers.dev). Redeploy the Next.js frontend. Do not put this in NEXT_PUBLIC_ variables.
 7. Check GET /health returns 200 with database:true and test POST from the website /feedback.
 
 The website's same-origin Next.js route proxies public GET and POST. If the Worker is unavailable or the Vercel environment variable is missing, the UI displays a real service-unavailable state and does not claim submission succeeded.
@@ -22,7 +23,7 @@ The website's same-origin Next.js route proxies public GET and POST. If the Work
 - GET /health: ready check, 503 when DB binding is absent
 - GET /api/feedback: moderated public list only, no pending/rejected content
 - POST /api/feedback: JSON type (feature|bug|experience), title (8-100), description (20-1200), alias optional (<=40); returns 201 and status pending
-- Request rate limit: 3 submissions per IP per UTC day, using salted day-scoped SHA-256 fingerprints; no raw IP persisted. Missing salt or client IP fails closed.
+- Request rate limit: 3 submissions per trusted client IP per UTC day. The Vercel proxy signs a daily pseudonymous visitor ID; Worker validates the signature. Direct Worker callers are limited by Cloudflare CF-Connecting-IP. No raw IP persisted. Missing salt, shared proxy secret, or client IP fails closed.
 - Origin for browser POST must match ALLOWED_ORIGIN. Cross-origin callers without Origin (e.g., curl) can call the public API but are rate limited.
 
 ## Moderation (private)
