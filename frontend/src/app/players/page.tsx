@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Search, Users, Monitor, Smartphone } from "lucide-react";
-import Navigation from "../components/Navigation";
+import { Search, Monitor, Smartphone } from "lucide-react";
+import ServiceState from "../components/ServiceState";
 import ChatModal from "../components/ChatModal";
 import PlayerCard from "../components/PlayerCard";
 import { useAuth } from "../contexts/AuthContext";
@@ -124,6 +124,7 @@ export default function PlayersPage() {
   const [minStars, setMinStars] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<"stars" | "name" | "rank">("name");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
 
@@ -148,14 +149,15 @@ export default function PlayersPage() {
     const fetchPlayers = async () => {
       try {
         setLoading(true);
-        const response = await fetch(API_ENDPOINTS.PLAYER_PROFILES.ALL);
+        setLoadError(false);
+        const response = await fetch(API_ENDPOINTS.PLAYER_PROFILES.ALL, { signal: AbortSignal.timeout(8000) });
 
         if (!response.ok) {
           throw new Error("Failed to fetch players");
         }
 
         const data = await response.json();
-        const allPlayers = data.profiles || [];
+        const allPlayers = Array.isArray(data.profiles) ? data.profiles : [];
 
         // Accept ANY player object and try to extract useful information
         const gamePlayers = allPlayers
@@ -190,7 +192,7 @@ export default function PlayersPage() {
               playerGame.toLowerCase().includes("moba") ||
               gameName.toLowerCase().includes(playerGame.toLowerCase());
 
-            return true; // Accept all players for now to see what we have
+            return Boolean((player.id || player._id || player.playerId) && playerName && matchesGame);
           })
           .map(
             (player: FlexiblePlayerData): Player => ({
@@ -240,68 +242,11 @@ export default function PlayersPage() {
             })
           );
 
-        // If no players found for this specific game, show all players
-        if (gamePlayers.length === 0 && allPlayers.length > 0) {
-          const allValidPlayers = allPlayers
-            .filter(
-              (player: FlexiblePlayerData) =>
-                player && typeof player === "object"
-            )
-            .map(
-              (player: FlexiblePlayerData): Player => ({
-                id: player.id || player._id || player.playerId || "",
-                name:
-                  player.name ||
-                  player.username ||
-                  player.displayName ||
-                  player.playerName ||
-                  "Unknown Player",
-                avatar:
-                  player.avatar || player.avatarUrl || player.profilePicture,
-                avatarPublicId: player.avatarPublicId || player.avatarId,
-                category:
-                  player.category === "PC" || player.platform === "PC"
-                    ? "PC"
-                    : "Mobile",
-                game:
-                  player.game ||
-                  player.gameType ||
-                  player.gameName ||
-                  "Unknown",
-                roles: Array.isArray(player.roles)
-                  ? player.roles
-                  : Array.isArray(player.role)
-                  ? player.role
-                  : player.role
-                  ? [player.role]
-                  : [],
-                inGameName:
-                  player.inGameName || player.ign || player.gameUsername,
-                mlbbId: player.mlbbId, // Add mlbbId
-                rank: player.rank || player.rankLevel || "Unknown",
-                rankStars: player.rankStars || player.stars || 0,
-                experience:
-                  player.experience || player.exp || player.level || "Unknown",
-                bio: player.bio || player.description || player.about,
-                description: player.description || player.bio || player.about,
-                isLookingForTeam: Boolean(
-                  player.isLookingForTeam ||
-                    player.lookingForTeam ||
-                    player.teamStatus
-                ),
-                socialLinks: player.socialLinks || player.social || {},
-                highlightVideo:
-                  player.highlightVideo || player.video || player.clip,
-              })
-            );
-
-          setPlayers(allValidPlayers);
-        } else {
-          setPlayers(gamePlayers);
-        }
+        setPlayers(gamePlayers);
       } catch (error) {
         console.error("Error fetching players:", error);
         setPlayers([]);
+        setLoadError(true);
       } finally {
         setLoading(false);
       }
@@ -312,7 +257,7 @@ export default function PlayersPage() {
 
   // Filter and sort players
   useEffect(() => {
-    let filtered = players;
+    let filtered = [...players];
 
     // Filter by search term (improved search logic)
     if (searchTerm.trim()) {
@@ -424,9 +369,8 @@ export default function PlayersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900">
-        <Navigation />
-        <main className="pt-20 pb-16">
+      <div className="min-h-screen bg-[#080d19]">
+          <main className="py-12 sm:py-16">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto"></div>
@@ -441,10 +385,9 @@ export default function PlayersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <Navigation />
+    <div className="min-h-screen bg-[#080d19]">
 
-      <main className="pt-20 pb-16">
+      <main className="py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <motion.div
@@ -470,43 +413,6 @@ export default function PlayersPage() {
               </div>
             </div>
           </motion.div>
-
-          {/* Debug Section - Remove after fixing */}
-          {process.env.NODE_ENV === "development" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="bg-yellow-900/50 border border-yellow-700 rounded-lg p-4 mb-6"
-            >
-              <h3 className="text-lg font-semibold text-yellow-200 mb-2">
-                🐛 Debug Info (Development Only)
-              </h3>
-              <div className="text-sm text-yellow-300 space-y-1">
-                <p>
-                  <strong>Game Name:</strong> {gameInfo.name}
-                </p>
-                <p>
-                  <strong>Total Players:</strong> {players.length}
-                </p>
-                <p>
-                  <strong>Filtered Players:</strong> {filteredPlayers.length}
-                </p>
-                <p>
-                  <strong>Search Term:</strong> &quot;{searchTerm}&quot;
-                </p>
-                <p>
-                  <strong>Selected Role:</strong> {selectedRole}
-                </p>
-                <p>
-                  <strong>Selected Rank:</strong> {selectedRank}
-                </p>
-                <p>
-                  <strong>Sort By:</strong> {sortBy}
-                </p>
-              </div>
-            </motion.div>
-          )}
 
           {/* Search and Filters */}
           <motion.div
@@ -665,22 +571,14 @@ export default function PlayersPage() {
             ))}
           </motion.div>
 
-          {/* Empty State */}
-          {filteredPlayers.length === 0 && !loading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-12"
-            >
-              <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-white mb-2">
-                Тоглогч олдсонгүй
-              </h3>
-              <p className="text-gray-300">
-                Хайлтын нөхцөл эсвэл шүүлтүүрээ тохируулна уу
-              </p>
-            </motion.div>
-          )}
+          {loadError ? (
+            <ServiceState mode="offline" title="Тоглогчдын мэдээлэл түр боломжгүй" description="Хуучин үйлчилгээтэй холбогдож чадсангүй. Тоглогчдын мэдээллийг одоогоор баталгаатай харуулах боломжгүй байна." />
+          ) : !loading && filteredPlayers.length === 0 ? (
+            <ServiceState mode="empty"
+              title={players.length === 0 ? "Тоглогчдын жагсаалт одоогоор хоосон" : "Шүүлтүүрт тохирох тоглогч алга"}
+              description={players.length === 0 ? "Бодит профайлууд нэмэгдэхэд энд харагдана." : "Хайлтын нөхцөлөө өөрчлөөд дахин оролдоорой."}
+            />
+          ) : null}
         </div>
       </main>
 

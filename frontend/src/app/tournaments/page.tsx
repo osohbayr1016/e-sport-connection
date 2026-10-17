@@ -10,7 +10,7 @@ import {
   Users,
   Gamepad2,
 } from "lucide-react";
-import Link from "next/link";
+import ServiceState from "../components/ServiceState";
 import TournamentCard, { Tournament } from "../../components/TournamentCard";
 import { API_ENDPOINTS } from "../../config/api";
 import { safeFetch, parseJsonSafe } from "../../lib/safeFetch";
@@ -92,12 +92,12 @@ export default function TournamentsPage() {
           setTournaments([]);
         }
       } else {
-        setTournaments([]);
+        throw new Error("Tournament service unavailable");
       }
     } catch (error) {
       console.error("Error fetching tournaments:", error);
       setTournaments([]);
-      setError("Failed to load tournaments. Please try again later.");
+      setError("Тэмцээний мэдээлэл ачаалж чадсангүй. Үйлчилгээ түр боломжгүй байна.");
     } finally {
       setIsLoading(false);
     }
@@ -175,7 +175,7 @@ export default function TournamentsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 pt-20">
+      <div className="min-h-screen bg-[#080d19] pt-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="animate-pulse">
             <div className="h-12 bg-gray-700 rounded w-1/3 mb-8 mx-auto"></div>
@@ -195,7 +195,7 @@ export default function TournamentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 pt-20">
+    <div className="min-h-screen bg-[#080d19] pt-4">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Header */}
         <motion.div
@@ -212,46 +212,12 @@ export default function TournamentsPage() {
           </p>
         </motion.div>
 
-        {/* Error Message */}
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-center"
-          >
-            <p className="text-red-400 text-sm">{error}</p>
-          </motion.div>
-        )}
-
-        {/* Empty State - No tournaments available */}
-        {tournaments.length === 0 && !isLoading && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center py-16"
-          >
-            <Trophy className="w-24 h-24 text-gray-600 mx-auto mb-6" />
-            <h2 className="text-3xl font-bold text-white mb-4">
-              Тэмцээн байхгүй байна
-            </h2>
-            <p className="text-lg text-gray-300 mb-8 max-w-2xl mx-auto">
-              Одоогоор идэвхтэй тэмцээн байхгүй байна. Шинэ тэмцээнүүд
-              нэмэгдэхэд энд харагдана.
-            </p>
-            <div className="space-y-4">
-              <p className="text-sm text-gray-400">
-                Тэмцээн зохион байгуулах хүсэлтэй бол бидэнтэй холбогдоно уу.
-              </p>
-              <Link
-                href="/contact"
-                className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 transition-all duration-300"
-              >
-                Холбогдох
-              </Link>
-            </div>
-          </motion.div>
-        )}
-
+        {error ? (
+          <ServiceState mode="offline" title="Тэмцээний мэдээлэл түр боломжгүй" description={error} />
+        ) : tournaments.length === 0 && !isLoading ? (
+          <ServiceState mode="empty" title="Одоогоор идэвхтэй тэмцээн алга"
+            description="Шинэ тэмцээн нээгдэхэд энд харуулна. Тэмцээн зохион байгуулах саналаа илгээгээрэй." />
+        ) : null}
         {/* Tournaments Grid - Only show if tournaments exist */}
         {tournaments.length > 0 && (
           <>

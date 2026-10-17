@@ -44,3 +44,9 @@ Current project scope: restore a useful Mobile Legends community website without
 
 ## Continuation contract
 At the start of each cycle inspect sport HEAD, current PR, CI, this file and latest user requests. Implement the next unfinished task in code; verify and record exact commit SHA, checks, blockers, and NEXT task. Do not claim live functionality until Cloudflare and Vercel configuration are verified. Do not merge untested changes just to trigger deployment.
+
+## Cycle 3: UX reliability
+- Players: remove duplicate global navigation; 8s fetch timeout, reject unrelated game profiles, ensure only real IDs shown, sort a copy and distinguish service downtime from real empty results.
+- Tournaments: surface backend failures rather than saying none exist; truthful empty state with link to community feedback.
+- New shared ServiceState for consistent accessible empty/offline messaging; remove dead social/footer links; expand UI CI path triggers.
+- Do not claim production deployment until account bindings and smoke tests are verified.
