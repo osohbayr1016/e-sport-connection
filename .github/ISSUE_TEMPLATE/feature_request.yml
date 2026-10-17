@@ -1,0 +1,45 @@
+name: "✨ Шинэ боломж санал болгох"
+description: "E-Sport Connection-д нэмэхийг хүссэн боломж"
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Баярлалаа! Таны санааг уншиж, хэрэгцээ болон хэрэгжүүлэх боломжийг нь үнэлнэ.
+        **Нууц үг, хувийн мэдээлэл, access token эсвэл API key бүү оруулаарай.**
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Ямар асуудлыг шийдэх вэ?"
+      description: "Одоо юу хийхэд хэцүү байна?"
+      placeholder: "Жишээ: Багийн гишүүдээ хайж олоход ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Таны санал болгож буй шийдэл"
+      description: "Яаж ажиллавал хамгийн хэрэгтэй вэ?"
+      placeholder: "Багийн хайлтад ... гэсэн шүүлтүүр нэмбэл ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Аль хэсэгт хамаарах вэ?"
+      options:
+        - "Тоглогчийн профайл"
+        - "Баг / Squad"
+        - "Тэмцээн"
+        - "Мэдээ / Community"
+        - "UI/UX"
+        - "Бусад"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: "Нэмэлт мэдээлэл"
+      description: "Зураг, жишээ эсвэл нэмэлт тайлбар (заавал биш)"
+    validations:
+      required: false

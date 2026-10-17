@@ -1,7 +1,9 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import News from "../models/News";
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 
 const newsRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
+  const adminOnly = { preHandler: [authenticateToken, requireAdmin] };
   // Health check
   fastify.get("/health", async (request, reply) => {
     return reply.send({
@@ -121,7 +123,7 @@ const newsRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Create news (admin only)
-  fastify.post("/", async (request, reply) => {
+  fastify.post("/", adminOnly, async (request, reply) => {
     try {
       const newsData = request.body as any;
 
@@ -178,7 +180,7 @@ const newsRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Update news (admin only)
-  fastify.put("/:id", async (request, reply) => {
+  fastify.put("/:id", adminOnly, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const updateData = request.body as any;
@@ -210,7 +212,7 @@ const newsRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Delete news (admin only)
-  fastify.delete("/:id", async (request, reply) => {
+  fastify.delete("/:id", adminOnly, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
 
