@@ -126,12 +126,13 @@ export const register = async (
     }
 
     // Validate role
-    const validRoles = ["PLAYER", "COACH", "ORGANIZATION", "ADMIN"];
+    // Public registration may NEVER mint an administrator account.
+    const validRoles = ["PLAYER", "COACH", "ORGANIZATION"];
     if (!validRoles.includes(role)) {
       return reply.status(400).send({
         success: false,
         message:
-          "Invalid role. Must be one of: PLAYER, COACH, ORGANIZATION, ADMIN",
+          "Invalid role. Must be one of: PLAYER, COACH, ORGANIZATION",
       });
     }
 

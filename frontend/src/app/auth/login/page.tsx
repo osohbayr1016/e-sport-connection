@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, AlertCircle, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Mail, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../contexts/AuthContext";
@@ -15,7 +15,6 @@ export default function LoginPage() {
     password: "",
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,11 +28,11 @@ export default function LoginPage() {
 
   const validateForm = () => {
     if (!formData.email.trim()) {
-      setError("Please enter your email");
+      setError("И-мэйл хаяг оруулна уу");
       return false;
     }
     if (!formData.password.trim()) {
-      setError("Please enter your password");
+      setError("Нууц үг оруулна уу");
       return false;
     }
     return true;
@@ -43,16 +42,20 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      return;
+    }
 
     setIsLoading(true);
 
     try {
       await login(formData.email.trim(), formData.password);
+
+      // Redirect to home page after successful login
       router.push("/");
     } catch (err: unknown) {
       const errorMessage =
-        err instanceof Error ? err.message : "Login failed. Please try again.";
+        err instanceof Error ? err.message : "Нэвтрэхэд алдаа гарлаа";
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -60,107 +63,85 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
-      {/* Background Image */}
-      <div
-        className="absolute inset-0 z-0"
-        style={{
-          backgroundImage: "url(/Gemini_Generated_Image_86dqw486dqw486dq.png)",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          filter: "blur(4px)",
-        }}
-      />
-      <div className="absolute inset-0 z-0 bg-black/30" />
-
-      {/* Login Card */}
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative z-10 w-full max-w-md mx-4"
+        className="w-full max-w-md"
       >
-        <div className="backdrop-blur-xl bg-white/10 rounded-2xl border border-white/20 shadow-2xl p-8 md:p-10">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <Link href="/">
-              <h1 className="text-3xl md:text-4xl font-bold text-white mb-1">
-                <span className="text-white">STANDOFF</span>
-                <span className="text-orange-500"> 2</span>
-              </h1>
-              <p className="text-gray-300 text-sm">Competitive Hub</p>
-            </Link>
-          </div>
+        {/* Header */}
+        <div className="text-center mb-8">
+          <Link href="/">
+            <motion.h1
+              whileHover={{ scale: 1.05 }}
+              className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 dark:from-green-400 dark:to-blue-400 bg-clip-text text-transparent mb-2"
+            >
+              E-Sport Connection
+            </motion.h1>
+          </Link>
+          <p className="text-white">
+            Эргэн тавтай морил!
+          </p>
+        </div>
 
-          {/* Login Title */}
-          <h2 className="text-2xl md:text-3xl font-bold text-orange-500 text-center mb-8">
-            LOGIN
-          </h2>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Login Form */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-700"
+        >
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Input */}
             <div>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                disabled={isLoading}
-                className="w-full px-5 py-4 bg-black/40 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-orange-500/50 transition-all duration-200 disabled:opacity-50"
-                placeholder="Email"
-              />
+              <label className="block text-sm font-medium text-white mb-2">
+                И-мэйл Хаяг
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                  disabled={isLoading}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-700 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="И-мэйл хаягаа оруулна уу"
+                />
+              </div>
             </div>
 
             {/* Password Input */}
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                disabled={isLoading}
-                className="w-full px-5 py-4 bg-black/40 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-orange-500/50 transition-all duration-200 disabled:opacity-50 pr-12"
-                placeholder="Password"
-              />
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 disabled:opacity-50"
-              >
-                {showPassword ? (
-                  <EyeOff className="w-5 h-5" />
-                ) : (
-                  <Eye className="w-5 h-5" />
-                )}
-              </button>
-            </div>
-
-            {/* Options Row */}
-            <div className="flex items-center justify-between text-sm">
-              <Link
-                href="/auth/forgot-password"
-                className="text-gray-300 hover:text-white transition-colors"
-              >
-                Forgot Password?
-              </Link>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <span className="text-gray-300">Remember Me</span>
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
+                Нууц Үг
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  required
+                  disabled={isLoading}
+                  className="w-full pr-12 px-4 py-3 border border-gray-700 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="Нууц үгээ оруулна уу"
+                />
                 <button
                   type="button"
-                  onClick={() => setRememberMe(!rememberMe)}
-                  className={`w-12 h-6 rounded-full transition-all duration-300 ${
-                    rememberMe ? "bg-orange-500" : "bg-gray-600"
-                  }`}
+                  disabled={isLoading}
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 disabled:opacity-50"
                 >
-                  <div
-                    className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${
-                      rememberMe ? "translate-x-6" : "translate-x-0.5"
-                    }`}
-                  />
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
-              </label>
+              </div>
             </div>
 
             {/* Error Message */}
@@ -168,55 +149,45 @@ export default function LoginPage() {
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm flex items-center gap-2"
+                className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 text-sm flex items-center space-x-2"
               >
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>{error}</span>
               </motion.div>
             )}
 
-            {/* Login Button */}
+            {/* Submit Button */}
             <motion.button
               type="submit"
               disabled={isLoading}
               whileHover={{ scale: isLoading ? 1 : 1.02 }}
               whileTap={{ scale: isLoading ? 1 : 0.98 }}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 px-4 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 dark:from-green-500 dark:to-blue-500 text-white py-3 px-4 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 dark:hover:from-green-600 dark:hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Logging in...</span>
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Нэвтэрч байна...</span>
                 </div>
               ) : (
-                "Login"
+                "Нэвтрэх"
               )}
             </motion.button>
           </form>
 
           {/* Register Link */}
           <div className="mt-6 text-center">
-            <p className="text-gray-300 text-sm">
-              Don&apos;t have an account?{" "}
+            <p className="text-white">
+              Бүртгэл байхгүй юу?{" "}
               <Link
                 href="/auth/register"
-                className="text-orange-500 hover:text-orange-400 font-medium transition-colors"
+                className="text-purple-400 hover:text-purple-300 font-medium transition-colors duration-200"
               >
-                Sign up
+                Бүртгүүлэх
               </Link>
             </p>
           </div>
-        </div>
-      </motion.div>
-
-      {/* Sparkle Decoration */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.5, duration: 0.5 }}
-        className="absolute bottom-8 right-8 z-10"
-      >
-        <Sparkles className="w-6 h-6 text-white/60" />
+        </motion.div>
       </motion.div>
     </div>
   );

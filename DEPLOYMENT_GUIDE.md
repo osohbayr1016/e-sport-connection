@@ -60,15 +60,15 @@ PORT=8000
 NODE_ENV=production
 
 # Database Configuration
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>/<database>
 
 # JWT Configuration
-JWT_SECRET=your-super-secret-jwt-key
+JWT_SECRET=REPLACE_IN_DEPLOYMENT_SECRET_STORE
 JWT_EXPIRES_IN=7d
 
 # Security Configuration
 BCRYPT_ROUNDS=12
-SESSION_SECRET=your-session-secret-key
+SESSION_SECRET=REPLACE_IN_DEPLOYMENT_SECRET_STORE
 
 # CORS Configuration
 FRONTEND_URL=https://your-frontend-domain.com
@@ -76,7 +76,7 @@ FRONTEND_URL=https://your-frontend-domain.com
 # Cloudinary Configuration
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
+CLOUDINARY_API_SECRET=REPLACE_IN_DEPLOYMENT_SECRET_STORE
 
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000

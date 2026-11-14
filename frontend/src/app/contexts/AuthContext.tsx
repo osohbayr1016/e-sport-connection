@@ -105,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Check if user is already logged in on mount
   useEffect(() => {
     const initializeAuth = async () => {
+      try {
       const token = getStoredToken();
       const userData = getStoredUser();
       const storedHasProfile = getStoredHasProfile();
@@ -135,17 +136,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           while (retryCount < maxRetries) {
             try {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
               response = await fetch(API_ENDPOINTS.AUTH.ME, {
                 headers: {
                   Authorization: `Bearer ${token}`,
                 },
-                signal: controller.signal,
+                signal: AbortSignal.timeout(5000),
               });
-
-              clearTimeout(timeoutId);
               break; // Success, exit retry loop
             } catch (error) {
               retryCount++;
@@ -227,7 +223,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
       }
-      setLoading(false);
+      } finally {
+        // Always unblock the app, including when the legacy backend times out.
+        setLoading(false);
+      }
     };
 
     initializeAuth();

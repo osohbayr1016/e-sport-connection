@@ -7,12 +7,11 @@ export interface IPlayerProfile extends Document {
   roles: string[];
   realName?: string;
   inGameName: string;
-  standoff2Id?: string;
   mlbbId?: string; // MLBB Game ID (optional)
-  rank?: string;
+  rank: string;
   rankStars?: number;
-  experience?: string;
-  bio?: string;
+  experience: string;
+  bio: string;
   avatar?: string;
   avatarPublicId?: string;
   socialLinks: {
@@ -33,16 +32,6 @@ export interface IPlayerProfile extends Document {
     preferredHours: string;
   };
   languages: string[];
-  // Game Statistics
-  elo: number;
-  wins: number;
-  losses: number;
-  kills: number;
-  deaths: number;
-  totalMatches: number;
-  isOnline: boolean;
-  lastSeen: Date;
-  region?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -76,11 +65,6 @@ const playerProfileSchema = new Schema<IPlayerProfile>(
       type: String,
       required: true,
     },
-    standoff2Id: {
-      type: String,
-      trim: true,
-      maxlength: 50,
-    },
     mlbbId: {
       type: String,
       trim: true,
@@ -88,21 +72,20 @@ const playerProfileSchema = new Schema<IPlayerProfile>(
     },
     rank: {
       type: String,
-      default: "Unranked",
+      required: true,
     },
     rankStars: {
       type: Number,
-      min: 0,
-      default: 0,
+      min: 100,
     },
     experience: {
       type: String,
-      default: "New Player",
+      required: true,
     },
     bio: {
       type: String,
+      required: true,
       maxlength: 1000,
-      default: "",
     },
     avatar: {
       type: String,
@@ -146,49 +129,6 @@ const playerProfileSchema = new Schema<IPlayerProfile>(
       type: [String],
       default: ["English"],
     },
-    // Game Statistics
-    elo: {
-      type: Number,
-      default: 1000,
-      min: 0,
-    },
-    wins: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    losses: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    kills: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    deaths: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    totalMatches: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    isOnline: {
-      type: Boolean,
-      default: false,
-    },
-    lastSeen: {
-      type: Date,
-      default: Date.now,
-    },
-    region: {
-      type: String,
-      default: "Global",
-    },
   },
   {
     timestamps: true,
@@ -199,9 +139,6 @@ const playerProfileSchema = new Schema<IPlayerProfile>(
 playerProfileSchema.index({ game: 1 });
 playerProfileSchema.index({ category: 1 });
 playerProfileSchema.index({ isLookingForTeam: 1 });
-playerProfileSchema.index({ elo: -1 });
-playerProfileSchema.index({ isOnline: 1 });
-playerProfileSchema.index({ region: 1 });
 
 export default mongoose.model<IPlayerProfile>(
   "PlayerProfile",

@@ -90,6 +90,7 @@ const userSchema = new Schema<IUser>(
     password: {
       type: String,
       minlength: 6,
+      select: false, // Never expose password hashes in ordinary user queries.
     },
     role: {
       type: String,

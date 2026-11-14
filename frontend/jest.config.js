@@ -16,7 +16,7 @@ const customJestConfig = {
     "!src/**/*.stories.{js,jsx,ts,tsx}",
     "!src/**/index.{js,jsx,ts,tsx}",
   ],
-  moduleNameMapping: {
+  moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
 };

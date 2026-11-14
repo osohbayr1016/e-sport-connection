@@ -1,4 +1,5 @@
 import { FastifyInstance } from "fastify";
+import rateLimit from "@fastify/rate-limit";
 
 export const rateLimitConfig = {
   // General API rate limiting
@@ -70,7 +71,7 @@ export const rateLimitConfig = {
 
 export const setupRateLimiting = async (fastify: FastifyInstance) => {
   // Register the rate limit plugin with general settings
-  await fastify.register(require("@fastify/rate-limit"), {
+  await fastify.register(rateLimit, {
     global: true,
     ...rateLimitConfig.general,
   });

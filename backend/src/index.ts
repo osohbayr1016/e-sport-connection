@@ -129,6 +129,22 @@ async function registerRoutes() {
     fastify.register(playerProfileRoutes.default, {
       prefix: "/api/player-profiles",
     });
+    // Organization profile routes
+    const organizationProfileRoutes = await import(
+      "./routes/organizationProfileRoutes"
+    );
+    fastify.register(organizationProfileRoutes.default, {
+      prefix: "/api/organization-profiles",
+    });
+    // Notification routes
+    const notificationRoutes = await import("./routes/notificationRoutes");
+    fastify.register(notificationRoutes.default, { prefix: "/api" });
+    // Stats routes
+    const statsRoutes = await import("./routes/statsRoutes");
+    fastify.register(statsRoutes.default, { prefix: "/api" });
+    // Test routes
+    const testRoutes = await import("./routes/testRoutes");
+    fastify.register(testRoutes.default, { prefix: "/api/test" });
     // Upload routes - Direct registration to avoid import issues
     try {
       const uploadRoutes = await import("./routes/uploadRoutes");
@@ -142,6 +158,46 @@ async function registerRoutes() {
       // Continue without upload routes
     }
 
+    // Message routes
+    const messageRoutes = await import("./routes/messageRoutes");
+    fastify.register(messageRoutes.default, { prefix: "/api" });
+    // News routes
+    const newsRoutes = await import("./routes/newsRoutes");
+    fastify.register(newsRoutes.default, { prefix: "/api/news" });
+    // Tournament routes
+    const tournamentRoutes = await import("./routes/tournamentRoutes");
+    fastify.register(tournamentRoutes.default, { prefix: "/api/tournaments" });
+    // Tournament match routes
+    const tournamentMatchRoutes = await import(
+      "./routes/tournamentMatchRoutes"
+    );
+    fastify.register(tournamentMatchRoutes.default, {
+      prefix: "/api/tournament-matches",
+    });
+    // Bounty coin routes
+    const bountyCoinRoutes = await import("./routes/bountyCoinRoutes");
+    fastify.register(bountyCoinRoutes.default, {
+      prefix: "/api/bounty-coins",
+    });
+    // Squad routes
+    const squadRoutes = await import("./routes/squadRoutes");
+    fastify.register(squadRoutes.default, { prefix: "/api/squads" });
+    // Division routes
+    const divisionRoutes = await import("./routes/divisionRoutes");
+    fastify.register(divisionRoutes.default, { prefix: "/api/divisions" });
+    // Tournament registration routes
+    const tournamentRegistrationRoutes = await import(
+      "./routes/tournamentRegistrationRoutes"
+    );
+    fastify.register(tournamentRegistrationRoutes.default, {
+      prefix: "/api/tournament-registrations",
+    });
+    // Dashboard routes
+    const dashboardRoutes = await import("./routes/dashboardRoutes");
+    fastify.register(dashboardRoutes.default, { prefix: "/api/dashboard" });
+    // Pro player routes
+    const proPlayerRoutes = await import("./routes/proPlayerRoutes");
+    fastify.register(proPlayerRoutes.default, { prefix: "/api/pro-players" });
     // Settings routes
     const settingsRoutes = await import("./routes/settingsRoutes");
     fastify.register(settingsRoutes.default, { prefix: "/api/settings" });
@@ -150,9 +206,29 @@ async function registerRoutes() {
     fastify.register(matchRoutes.default, { prefix: "/api/matches" });
     // Match action routes
     const matchActionRoutes = await import("./routes/matchActionRoutes");
-    fastify.register(matchActionRoutes.default, {
-      prefix: "/api/match-actions",
+    fastify.register(matchActionRoutes.default, { prefix: "/api/match-actions" });
+    // Admin match routes
+    const adminMatchRoutes = await import("./routes/adminMatchRoutes");
+    fastify.register(adminMatchRoutes.default, {
+      prefix: "/api/admin/matches",
     });
+    // Stream routes
+    const streamRoutes = await import("./routes/streamRoutes");
+    fastify.register(streamRoutes.default, { prefix: "/api" });
+    // Achievement routes
+    const achievementRoutes = await import("./routes/achievementRoutes");
+    fastify.register(achievementRoutes.default, {
+      prefix: "/api",
+    });
+    
+    // Admin Achievement routes
+    const adminAchievementRoutes = await import("./routes/adminAchievementRoutes");
+    fastify.register(adminAchievementRoutes.default, {
+      prefix: "/api",
+    });
+    // Admin routes
+    const adminRoutes = await import("./routes/adminRoutes");
+    fastify.register(adminRoutes.default, { prefix: "/api/admin" });
   } catch (error) {
     console.error("❌ Error registering routes:", error);
     // Continue without routes for basic health check

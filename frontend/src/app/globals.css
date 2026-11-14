@@ -31,7 +31,7 @@
   --card-foreground: #f9fafb;
   --popover: #1f2937;
   --popover-foreground: #f9fafb;
-  --primary: #f97316;
+  --primary: #8b5cf6;
   --primary-foreground: #ffffff;
   --secondary: #374151;
   --secondary-foreground: #f9fafb;
@@ -43,7 +43,7 @@
   --destructive-foreground: #ffffff;
   --border: #374151;
   --input: #374151;
-  --ring: #f97316;
+  --ring: #8b5cf6;
   --radius: 0.5rem;
 }
 
@@ -54,7 +54,7 @@
   --card-foreground: #ededed;
   --popover: #1a1a1a;
   --popover-foreground: #ededed;
-  --primary: #f97316;
+  --primary: #10b981;
   --primary-foreground: #ffffff;
   --secondary: #1f2937;
   --secondary-foreground: #f9fafb;
@@ -66,7 +66,7 @@
   --destructive-foreground: #ffffff;
   --border: #374151;
   --input: #374151;
-  --ring: #f97316;
+  --ring: #10b981;
 }
 
 * {
@@ -119,16 +119,16 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: #111827;
+  background: var(--background);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: linear-gradient(to bottom, var(--primary), #ec4899);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #f97316;
+  background: linear-gradient(to bottom, #7c3aed, #db2777);
 }
 
 /* Chat scrollbar styles */
@@ -259,10 +259,10 @@ html {
 @keyframes glow {
   0%,
   100% {
-    box-shadow: 0 0 5px rgba(249, 115, 22, 0.3);
+    box-shadow: 0 0 5px rgba(139, 92, 246, 0.3);
   }
   50% {
-    box-shadow: 0 0 20px rgba(249, 115, 22, 0.6);
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
   }
 }
 

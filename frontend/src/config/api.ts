@@ -9,7 +9,7 @@ const getApiBaseUrl = () => {
   if (typeof window !== "undefined") {
     // In browser
     if (window.location.hostname === "localhost") {
-      return "http://localhost:5001";
+      return "http://localhost:8000";
     } else {
       // Production - use Render backend
       return "https://e-sport-connection-0596.onrender.com";
@@ -18,7 +18,7 @@ const getApiBaseUrl = () => {
     // On server (SSR)
     return process.env.NODE_ENV === "production"
       ? "https://e-sport-connection-0596.onrender.com"
-      : "http://localhost:5001";
+      : "http://localhost:8000";
   }
 };
 
@@ -28,7 +28,7 @@ const WS_BASE_URL =
   process.env.NEXT_PUBLIC_WS_URL ||
   (typeof window !== "undefined" && window.location.hostname !== "localhost"
     ? "https://e-sport-connection-0596.onrender.com"
-    : "http://localhost:5001");
+    : "http://localhost:8000");
 
 export const API_ENDPOINTS = {
   BASE_URL: API_BASE_URL,
@@ -205,10 +205,8 @@ export const API_ENDPOINTS = {
     CLAIM: (id: string) => `${API_BASE_URL}/api/achievements/claim/${id}`,
     BADGES: `${API_BASE_URL}/api/achievements/badges`,
     MY_BADGES: `${API_BASE_URL}/api/achievements/my-badges`,
-    EQUIP_BADGE: (id: string) =>
-      `${API_BASE_URL}/api/achievements/badges/equip/${id}`,
-    UNEQUIP_BADGE: (id: string) =>
-      `${API_BASE_URL}/api/achievements/badges/unequip/${id}`,
+    EQUIP_BADGE: (id: string) => `${API_BASE_URL}/api/achievements/badges/equip/${id}`,
+    UNEQUIP_BADGE: (id: string) => `${API_BASE_URL}/api/achievements/badges/unequip/${id}`,
     LEADERBOARD: `${API_BASE_URL}/api/achievements/leaderboard`,
     TRIGGER: `${API_BASE_URL}/api/achievements/trigger`,
     CREATE_SAMPLE: `${API_BASE_URL}/api/achievements/create-sample`,
@@ -222,8 +220,7 @@ export const API_ENDPOINTS = {
     BADGES_CREATE: `${API_BASE_URL}/api/admin/badges`,
     BADGES_UPDATE: (id: string) => `${API_BASE_URL}/api/admin/badges/${id}`,
     BADGES_DELETE: (id: string) => `${API_BASE_URL}/api/admin/badges/${id}`,
-    USER_PROGRESS: (userId: string) =>
-      `${API_BASE_URL}/api/admin/user-progress/${userId}`,
+    USER_PROGRESS: (userId: string) => `${API_BASE_URL}/api/admin/user-progress/${userId}`,
     USERS_PROGRESS: `${API_BASE_URL}/api/admin/users-progress`,
     AWARD_ACHIEVEMENT: `${API_BASE_URL}/api/admin/award-achievement`,
     AWARD_BADGE: `${API_BASE_URL}/api/admin/award-badge`,

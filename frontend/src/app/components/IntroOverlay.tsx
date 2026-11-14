@@ -11,7 +11,7 @@ interface IntroOverlayProps {
 }
 
 export default function IntroOverlay({
-  heroImage = "/games/standoff2.png",
+  heroImage = "/games/mlbb-parallax-bg.jpg",
   playOnceKey = "intro_played",
   durationMs = 2600,
 }: IntroOverlayProps) {
@@ -64,7 +64,7 @@ export default function IntroOverlay({
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.5 }}
             >
-              STANDOFF 2
+              Mobile Legends: Bang Bang
             </motion.h1>
             <motion.p
               className="mt-3 text-lg sm:text-2xl text-gray-200"

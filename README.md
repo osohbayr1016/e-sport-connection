@@ -6,14 +6,14 @@ A full-stack web application for e-sports enthusiasts to connect, form teams, an
 
 ### Frontend
 
-- **Next.js 14** - React framework with App Router
+- **Next.js 15** - React framework with App Router
 - **TypeScript** - Type-safe JavaScript
 - **Tailwind CSS** - Utility-first CSS framework
-- **React Hooks** - State management and side effects
+- **React 19 Hooks** - State management and side effects
 
 ### Backend
 
-- **Express.js** - Fast, unopinionated web framework
+- **Fastify 4** - HTTP API framework
 - **TypeScript** - Type-safe Node.js development
 - **MongoDB** - NoSQL database with Mongoose ODM
 - **JWT** - JSON Web Token authentication
@@ -281,4 +281,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Made with ❤️ for the gaming community**
 
 # e-sport-connection
-# standoff2

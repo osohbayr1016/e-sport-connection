@@ -7,6 +7,7 @@ import {
   refreshToken,
 } from "../controllers/authController";
 import { authenticateToken } from "../middleware/auth";
+import { rateLimitConfig } from "../config/rateLimit";
 
 const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // Health check for auth
@@ -19,10 +20,10 @@ const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Login endpoint
-  fastify.post("/login", login);
+  fastify.post("/login", { config: { rateLimit: rateLimitConfig.auth } }, login);
 
   // Register endpoint
-  fastify.post("/register", register);
+  fastify.post("/register", { config: { rateLimit: rateLimitConfig.auth } }, register);
 
   // Get current user (protected)
   fastify.get("/me", { preHandler: authenticateToken }, getCurrentUser);
