@@ -281,3 +281,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Made with ❤️ for the gaming community**
 
 # e-sport-connection
+
+## Engineering updates (November 2026)
+
+The authoritative transactional API remains **Fastify + MongoDB**, with a separate **Cloudflare Worker + D1** for community feedback/discovery. Do not merge these data sources without explicit synchronization and consistency checks.
+
+- [Second engineering audit and prioritized roadmap](docs/SECOND_AUDIT_2026-11-14.md)
+- `cd backend && npm ci && npm run type-check && npm test -- --runInBand` (MongoDB memory replica set for tests)
+- `cd frontend && npm ci && npm test -- --runInBand && npm run build`
+- `node --test security/tests/*.test.mjs` (backend authorization regression)
+- `cd community-worker && npm test` (Cloudflare community API)
+
+Production Cloudflare deployment is manual-only and requires explicit confirmation. See the audit for remaining financial security and release blockers; passing CI is **not** certification of production readiness.

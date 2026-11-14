@@ -151,9 +151,12 @@ const tournamentRoutes: FastifyPluginAsync = async (
         "registrationDeadline",
       ];
       const maxSquads = tournamentData.maxSquads ?? tournamentData.maxParticipants;
-      const missingFields = requiredFields.filter(
-        (field) => field === "maxSquads" ? maxSquads === undefined : !tournamentData[field]
-      );
+      const missingFields = requiredFields.filter((field) => {
+        if (field === "maxSquads") return maxSquads === undefined || maxSquads === null;
+        const value = tournamentData[field];
+        return value === undefined || value === null ||
+          (typeof value === "string" && !value.trim());
+      });
       if (!Number.isSafeInteger(Number(maxSquads)) || Number(maxSquads) < 2 || Number(maxSquads) > 256) {
         return reply.status(400).send({ success: false, message: "maxSquads must be between 2 and 256" });
       }
