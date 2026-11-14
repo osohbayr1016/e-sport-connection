@@ -37,7 +37,8 @@ test("tournament registration requires authenticated squad leader and paid entri
   assert.ok(code.includes('squad.leader.toString() !== (request as any).user?.id'));
   const reg = source("tournamentRegistrationRoutes.ts");
   assert.ok(reg.includes('squadLeaderId !== (request as any).user?.id'));
-  assert.ok(reg.includes('registration.squadLeader.toString() !== (request as any).user?.id'));
+  assert.ok(reg.includes('const userId = (request as any).user?.id;'));
+  assert.ok(reg.includes('registration.squadLeader.toString() !== userId'));
 });
 
 test("developer achievement triggers cannot be called anonymously", () => {
