@@ -106,7 +106,7 @@ export default function AdminTournamentRegistrationsPage() {
     const token = getToken();
     if (!token) { setMessage("Admin session expired. Sign in again."); return; }
     const current = registrations.find(item => item._id === registrationId) || selectedRegistration;
-    if (action === "approve" && current?.paymentStatus !== "paid") {
+    if (action === "approve" && (current?.paymentStatus !== "paid" || !current.paymentReference)) {
       setMessage("Confirm the bank payment and record its reference before approval.");
       return;
     }
@@ -420,8 +420,8 @@ export default function AdminTournamentRegistrationsPage() {
                       {registration.approvalStatus === "pending" && (
                         <>
                           <button
-                            disabled={registration.paymentStatus !== "paid"}
-                            title={registration.paymentStatus !== "paid" ? "Verify payment in details first" : "Approve registration"}
+                            disabled={registration.paymentStatus !== "paid" || !registration.paymentReference}
+                            title={registration.paymentStatus !== "paid" || !registration.paymentReference ? "Verify payment in details first" : "Approve registration"}
                             onClick={() =>
                               handleApproval(registration._id, "approve")
                             }
@@ -584,7 +584,8 @@ export default function AdminTournamentRegistrationsPage() {
                 )}
 
                 {/* Manual bank verification is separate from competition approval. */}
-                {selectedRegistration.approvalStatus === "pending" && selectedRegistration.paymentStatus !== "paid" && (
+                {selectedRegistration.approvalStatus === "pending" &&
+                  (selectedRegistration.paymentStatus !== "paid" || !selectedRegistration.paymentReference) && (
                   <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
                     <h4 className="font-medium text-amber-800 dark:text-amber-200">Verify bank payment</h4>
                     <p className="text-sm text-amber-700 dark:text-amber-300">Confirm transfer in your bank system, not from the screenshot alone.</p>
@@ -629,7 +630,7 @@ export default function AdminTournamentRegistrationsPage() {
 
                     <div className="flex space-x-3">
                       <button
-                        disabled={selectedRegistration.paymentStatus !== "paid"}
+                        disabled={selectedRegistration.paymentStatus !== "paid" || !selectedRegistration.paymentReference}
                         onClick={() =>
                           handleApproval(selectedRegistration._id, "approve")
                         }

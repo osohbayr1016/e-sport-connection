@@ -195,8 +195,14 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
       if (!tournament || tournament.tournamentType !== "tax") {
         return reply.status(409).send({ success: false, message: "Only paid tournament registration can be manually verified" });
       }
+      const paymentPredicate = paymentStatus === "paid"
+        ? { $or: [
+          { paymentStatus: { $in: ["pending", "failed"] } },
+          { paymentStatus: "paid", paymentReference: { $exists: false } },
+        ] }
+        : { paymentStatus: "pending" };
       const updated = await TournamentRegistration.findOneAndUpdate(
-        { _id: id, approvalStatus: "pending", paymentStatus: { $in: ["pending", "failed"] } },
+        { _id: id, approvalStatus: "pending", ...paymentPredicate },
         { $set: paymentStatus === "paid" ? {
           paymentStatus: "paid", paymentReference: paymentReference!.trim().toUpperCase(),
           paymentVerifiedBy: (request as any).user.id, paymentVerifiedAt: new Date(),

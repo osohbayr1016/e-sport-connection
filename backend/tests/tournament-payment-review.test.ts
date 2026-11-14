@@ -54,6 +54,17 @@ describe("paid tournament review and capacity",()=>{
   expect((await TournamentRegistration.findById(f.registration.id))!.paymentStatus).toBe("paid");
   expect((await TournamentRegistration.findById(f.registration.id))!.isApproved).toBe(true);
  });
+ test("legacy paid registrations can attach a verified reference without being re-charged",async()=>{
+  const f=await fixture();
+  await TournamentRegistration.updateOne({ _id: f.registration.id }, { $set: { paymentStatus:"paid" } });
+  const p="/api/tournament-registrations/"+f.registration.id;
+  const recorded=await app.inject({method:"PUT",url:p+"/payment",headers:header(f.admin),
+   payload:{paymentStatus:"paid",paymentReference:"RECOVER-REF-123"}});
+  expect(recorded.statusCode).toBe(200);
+  expect((await TournamentRegistration.findById(f.registration.id))!.paymentReference).toBe("RECOVER-REF-123");
+  const approved=await app.inject({method:"PUT",url:p+"/approve",headers:header(f.admin),payload:{action:"approve"}});
+  expect(approved.statusCode).toBe(200);
+ });
  test("rejecting a nonpaid registration returns the slot once",async()=>{
   const f=await fixture();
   const url="/api/tournament-registrations/"+f.registration.id+"/approve";
