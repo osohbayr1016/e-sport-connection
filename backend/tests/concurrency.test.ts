@@ -108,4 +108,46 @@ describe("concurrent tournament and financial writes", () => {
     expect((await approve()).statusCode).toBe(409);
     expect((await Squad.findById(squad._id))!.currentBountyCoins).toBe(50);
   });
+  test("check-in is leader-only, limited to the event window and idempotent", async () => {
+    const leader = await account("checkinleader");
+    const stranger = await account("checkinoutsider");
+    const squad = await squadFor(leader, "CIN");
+    const cup = await tournament(2);
+    cup.startDate = new Date(Date.now() + 6 * 3600000);
+    cup.endDate = new Date(Date.now() + 24 * 3600000);
+    await cup.save();
+    const registration = await TournamentRegistration.create({
+      tournament: cup._id, squad: squad._id, squadLeader: leader._id,
+      squadMembers: [leader._id], registrationFee: 0,
+      paymentStatus: "paid", isApproved: true, approvalStatus: "approved",
+      status: "registered",
+    });
+    const endpoint = "/api/tournament-registrations/" + registration._id + "/check-in";
+    const unauthorized = await app.inject({ method: "POST", url: endpoint });
+    expect(unauthorized.statusCode).toBe(401);
+    const outsider = await app.inject({ method: "POST", url: endpoint,
+      headers: { authorization: "Bearer " + tokenFor(stranger) } });
+    expect(outsider.statusCode).toBe(404);
+    const checkin = () => app.inject({ method: "POST", url: endpoint,
+      headers: { authorization: "Bearer " + tokenFor(leader) } });
+    const first = await checkin();
+    const second = await checkin();
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(first.json().alreadyCheckedIn).toBe(false);
+    expect(second.json().alreadyCheckedIn).toBe(true);
+    expect((await TournamentRegistration.findById(registration._id))!.checkedInAt).toBeDefined();
+
+    const lateCup = await tournament(2);
+    const early = await TournamentRegistration.create({
+      tournament: lateCup._id, squad: squad._id, squadLeader: leader._id,
+      squadMembers: [leader._id], registrationFee: 0, paymentStatus: "paid",
+      isApproved: true, approvalStatus: "approved", status: "registered",
+    });
+    const premature = await app.inject({ method: "POST",
+      url: "/api/tournament-registrations/" + early._id + "/check-in",
+      headers: { authorization: "Bearer " + tokenFor(leader) } });
+    expect(premature.statusCode).toBe(409);
+  });
+
 });

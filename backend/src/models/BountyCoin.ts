@@ -81,7 +81,7 @@ const bountyCoinSchema = new Schema<IBountyCoin>(
 );
 
 // Index for faster queries
-bountyCoinSchema.index({ userId: 1 });
+// userId already has a unique index declared in its schema field.
 bountyCoinSchema.index({ squadId: 1 });
 
 export default model<IBountyCoin>("BountyCoin", bountyCoinSchema);
