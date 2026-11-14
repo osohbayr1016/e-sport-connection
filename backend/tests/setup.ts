@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 
 let mongoServer: MongoMemoryServer;
+process.env.JWT_SECRET = "integration-test-only-strong-secret-with-32-chars";
+process.env.NODE_ENV = "test";
 
 beforeAll(async () => {
   // Start in-memory MongoDB instance

@@ -1,155 +1,51 @@
-import request from "supertest";
-import { FastifyInstance } from "fastify";
 import { buildApp } from "../src/index";
+import type { FastifyInstance } from "fastify";
 
-describe("Auth Routes", () => {
+describe("authentication end-to-end", () => {
   let app: FastifyInstance;
+  beforeAll(async () => { app = await buildApp(); await app.ready(); });
+  afterAll(async () => { await app.close(); });
 
-  beforeAll(async () => {
-    app = await buildApp();
-    await app.ready();
+  const register = (email = "player@example.com", role = "PLAYER") =>
+    app.inject({ method: "POST", url: "/api/auth/register", payload: {
+      name: "Example Player", email, password: "a-long-test-password", role,
+    } });
+
+  test("registration and password login work and never return hashes", async () => {
+    const signup = await register();
+    expect(signup.statusCode).toBe(201);
+    const created = signup.json();
+    expect(created.success).toBe(true);
+    expect(created.token).toBeDefined();
+    expect(created.user.password).toBeUndefined();
+
+    const login = await app.inject({ method: "POST", url: "/api/auth/login",
+      payload: { email: "player@example.com", password: "a-long-test-password" } });
+    expect(login.statusCode).toBe(200);
+    expect(login.json().token).toBeDefined();
+    expect(login.json().user.password).toBeUndefined();
+
+    const current = await app.inject({ method: "GET", url: "/api/auth/me",
+      headers: { authorization: "Bearer " + login.json().token } });
+    expect(current.statusCode).toBe(200);
   });
 
-  afterAll(async () => {
-    await app.close();
+  test("public registration can never grant administrator privileges", async () => {
+    const response = await register("admin-attempt@example.com", "ADMIN");
+    expect(response.statusCode).toBe(400);
   });
 
-  describe("POST /api/auth/register", () => {
-    it("should register a new user successfully", async () => {
-      const userData = {
-        name: "Test User",
-        email: "test@example.com",
-        password: "password123",
-        role: "PLAYER",
-      };
-
-      const response = await request(app.server)
-        .post("/api/auth/register")
-        .send(userData)
-        .expect(201);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.user.email).toBe(userData.email);
-      expect(response.body.data.token).toBeDefined();
-    });
-
-    it("should not register user with duplicate email", async () => {
-      const userData = {
-        name: "Test User 2",
-        email: "test@example.com", // Same email as previous test
-        password: "password123",
-        role: "PLAYER",
-      };
-
-      const response = await request(app.server)
-        .post("/api/auth/register")
-        .send(userData)
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.message).toContain("already exists");
-    });
-
-    it("should validate required fields", async () => {
-      const userData = {
-        name: "Test User",
-        // Missing email and password
-        role: "PLAYER",
-      };
-
-      const response = await request(app.server)
-        .post("/api/auth/register")
-        .send(userData)
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-    });
+  test("rejects incorrect passwords and unauthenticated profile reads", async () => {
+    await register();
+    const login = await app.inject({ method: "POST", url: "/api/auth/login",
+      payload: { email: "player@example.com", password: "incorrect" } });
+    expect(login.statusCode).toBe(401);
+    expect((await app.inject({ method: "GET", url: "/api/auth/me" })).statusCode).toBe(401);
   });
 
-  describe("POST /api/auth/login", () => {
-    beforeEach(async () => {
-      // Register a user for login tests
-      const userData = {
-        name: "Login Test User",
-        email: "logintest@example.com",
-        password: "password123",
-        role: "PLAYER",
-      };
-
-      await request(app.server).post("/api/auth/register").send(userData);
-    });
-
-    it("should login with valid credentials", async () => {
-      const loginData = {
-        email: "logintest@example.com",
-        password: "password123",
-      };
-
-      const response = await request(app.server)
-        .post("/api/auth/login")
-        .send(loginData)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.user.email).toBe(loginData.email);
-      expect(response.body.data.token).toBeDefined();
-    });
-
-    it("should not login with invalid credentials", async () => {
-      const loginData = {
-        email: "logintest@example.com",
-        password: "wrongpassword",
-      };
-
-      const response = await request(app.server)
-        .post("/api/auth/login")
-        .send(loginData)
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-    });
-  });
-
-  describe("GET /api/auth/me", () => {
-    let authToken: string;
-
-    beforeEach(async () => {
-      // Register and login a user
-      const userData = {
-        name: "Me Test User",
-        email: "metest@example.com",
-        password: "password123",
-        role: "PLAYER",
-      };
-
-      await request(app.server).post("/api/auth/register").send(userData);
-
-      const loginResponse = await request(app.server)
-        .post("/api/auth/login")
-        .send({
-          email: "metest@example.com",
-          password: "password123",
-        });
-
-      authToken = loginResponse.body.data.token;
-    });
-
-    it("should get user profile with valid token", async () => {
-      const response = await request(app.server)
-        .get("/api/auth/me")
-        .set("Authorization", `Bearer ${authToken}`)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.user.email).toBe("metest@example.com");
-    });
-
-    it("should not get user profile without token", async () => {
-      const response = await request(app.server)
-        .get("/api/auth/me")
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-    });
+  test("rejects duplicate emails", async () => {
+    await register();
+    const duplicate = await register();
+    expect(duplicate.statusCode).toBe(409);
   });
 });

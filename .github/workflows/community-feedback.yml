@@ -89,6 +89,11 @@ jobs:
       - name: Type-check backend
         working-directory: backend
         run: npm run type-check
+      - name: Run backend integration tests
+        working-directory: backend
+        env:
+          MONGOMS_DOWNLOAD_IGNORE_MISSING_HEADER: "true"
+        run: npm test -- --runInBand
 
   frontend:
     runs-on: ubuntu-latest
