@@ -1,3 +1,4 @@
+import { authenticateToken } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import jwt from "jsonwebtoken";
 import PlayerProfile from "../models/PlayerProfile";
@@ -24,7 +25,7 @@ const playerProfileRoutes: FastifyPluginAsync = async (
   });
 
   // Create player profile
-  fastify.post("/create-profile", async (request, reply) => {
+  fastify.post("/create-profile", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const token = request.headers.authorization?.replace("Bearer ", "");
 
@@ -80,9 +81,15 @@ const playerProfileRoutes: FastifyPluginAsync = async (
       }
 
       // Create new profile
+      // Never allow a payload to override the verified account owner.
+      const permitted = ["category","game","roles","realName","inGameName","mlbbId","rank","rankStars","experience","bio","avatar","avatarPublicId","socialLinks","highlightVideo","isLookingForTeam","availability","languages"];
+      const data: Record<string, unknown> = {};
+      for (const field of permitted) {
+        if (Object.prototype.hasOwnProperty.call(profileData, field)) data[field] = profileData[field];
+      }
       const newProfile = new PlayerProfile({
-        userId: decoded.id,
-        ...profileData,
+        ...data,
+        userId: (request as any).user.id,
       });
 
       await newProfile.save();
@@ -177,7 +184,7 @@ const playerProfileRoutes: FastifyPluginAsync = async (
   });
 
   // Update profile
-  fastify.put("/update-profile", async (request, reply) => {
+  fastify.put("/update-profile", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const token = request.headers.authorization?.replace("Bearer ", "");
 
@@ -196,7 +203,15 @@ const playerProfileRoutes: FastifyPluginAsync = async (
         });
       }
 
-      const updateData = request.body as any;
+      const payload = request.body as Record<string, unknown>;
+      const permitted = ["category","game","roles","realName","inGameName","mlbbId","rank","rankStars","experience","bio","avatar","avatarPublicId","socialLinks","highlightVideo","isLookingForTeam","availability","languages"];
+      const updateData: Record<string, unknown> = {};
+      for (const field of permitted) {
+        if (Object.prototype.hasOwnProperty.call(payload, field)) updateData[field] = payload[field];
+      }
+      if (Object.keys(updateData).length === 0) {
+        return reply.status(400).send({ success: false, message: "No editable fields supplied" });
+      }
 
       const profile = await PlayerProfile.findOneAndUpdate(
         { userId: decoded.id },
