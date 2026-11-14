@@ -320,42 +320,28 @@ const tournamentRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Get tournament registrations (for tournament detail page)
+  // Public list: approved participants only, never payment evidence or emails.
   fastify.get("/:id/registrations", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { page = 1, limit = 10 } = request.query as any;
-
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-
+      if (!mongoose.isValidObjectId(id)) return reply.status(400).send({ success: false, message: "Invalid tournament ID" });
+      const query = request.query as { page?: string; limit?: string };
+      const page = Math.max(1, Number.parseInt(query.page || "1", 10) || 1);
+      const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit || "10", 10) || 10));
+      const filter = { tournament: id, isApproved: true, isBanned: { $ne: true } };
       const [registrations, total] = await Promise.all([
-        TournamentRegistration.find({ tournament: id })
+        TournamentRegistration.find(filter)
+          .select("tournament squad squadLeader squadMembers registrationDate status isApproved approvalStatus")
           .populate("squad", "name tag logo")
-          .populate("squadLeader", "name email avatar")
-          .populate("squadMembers", "name email avatar")
-          .sort({ registrationDate: -1 })
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        TournamentRegistration.countDocuments({ tournament: id }),
+          .populate("squadLeader", "name avatar")
+          .populate("squadMembers", "name avatar")
+          .sort({ registrationDate: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        TournamentRegistration.countDocuments(filter),
       ]);
-
-      return reply.status(200).send({
-        success: true,
-        registrations,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit)),
-        },
-      });
+      return reply.send({ success: true, registrations, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
     } catch (error) {
-      console.error("Get tournament registrations error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to get tournament registrations",
-      });
+      request.log.error({ error }, "Public registration list failed");
+      return reply.status(500).send({ success: false, message: "Failed to get tournament participants" });
     }
   });
 

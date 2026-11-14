@@ -244,7 +244,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Get tournament registrations by tournament ID
-  fastify.get("/tournament/:tournamentId", async (request, reply) => {
+  fastify.get("/tournament/:tournamentId", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { tournamentId } = request.params as { tournamentId: string };
       const { page = 1, limit = 10 } = request.query as any;
@@ -284,9 +284,15 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Get squad registrations by squad ID
-  fastify.get("/squad/:squadId", async (request, reply) => {
+  fastify.get("/squad/:squadId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { squadId } = request.params as { squadId: string };
+      const actor = (request as any).user;
+      const squad = await Squad.findById(squadId).select("leader");
+      if (!squad) return reply.status(404).send({ success: false, message: "Squad not found" });
+      if (actor?.role !== "ADMIN" && squad.leader.toString() !== actor?.id) {
+        return reply.status(403).send({ success: false, message: "Only squad leader can view registration payments" });
+      }
 
       const registrations = await TournamentRegistration.find({
         squad: squadId,
