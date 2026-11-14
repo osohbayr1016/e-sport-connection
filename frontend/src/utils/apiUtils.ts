@@ -16,51 +16,48 @@ export const robustApiCall = async (
 ): Promise<Response> => {
   const { timeout = 15000, retries = 2, retryDelay = 1000 } = config;
 
+  // Never replay a state-changing request just because the server returned 5xx
+  // or the connection timed out. The first request may already have succeeded.
+  const method = (options.method || "GET").toUpperCase();
+  const safeToRetry = ["GET", "HEAD", "OPTIONS"].includes(method);
+  const maxRetries = safeToRetry ? Math.max(0, retries) : 0;
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    if (options.signal?.aborted) {
+      controller.abort();
+    } else {
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+    }
 
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    try {
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
-      // If we get a response (even if it's an error), return it
-      // Don't retry on 4xx errors (client errors)
-      if (response.status < 500) {
+      if (response.status < 500 || attempt >= maxRetries) {
         return response;
       }
-
-      // For 5xx errors, retry if we have attempts left
-      if (attempt < retries) {
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-        continue;
-      }
-
-      return response;
     } catch (error) {
-      lastError = error as Error;
-
-      if (error instanceof Error && error.name === "AbortError") {
-      } else {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (options.signal?.aborted || attempt >= maxRetries) {
+        throw lastError;
       }
-
-      // If this is our last attempt, throw the error
-      if (attempt >= retries) {
-        break;
-      }
-
-      // Wait before retrying
-      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    } finally {
+      clearTimeout(timeoutId);
+      options.signal?.removeEventListener("abort", onAbort);
     }
+
+    if (options.signal?.aborted) {
+      throw lastError || new Error("Request aborted");
+    }
+    await new Promise((resolve) => setTimeout(resolve, retryDelay));
   }
 
-  // If we get here, all retries failed
   throw lastError || new Error("API call failed after all retries");
 };
 
@@ -95,12 +92,11 @@ export const fetchWithFallback = async <T>(
 
     if (response.ok) {
       const data = await response.json();
-      return { data: data.success ? data : fallbackData, isFromApi: true };
+      return { data: data.success ? data : fallbackData, isFromApi: Boolean(data.success) };
     } else {
       return { data: fallbackData, isFromApi: false };
     }
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch {
     return { data: fallbackData, isFromApi: false };
   }
 };
