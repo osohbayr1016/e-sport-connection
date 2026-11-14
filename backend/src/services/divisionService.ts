@@ -18,11 +18,9 @@ export class DivisionService {
   /**
    * Process match result and update squad divisions and bounty coins
    */
-  static async processMatchResult(matchId: string): Promise<void> {
+  static async processMatchResult(matchId: string, providedSession?: ClientSession): Promise<void> {
     if (!mongoose.isValidObjectId(matchId)) throw new Error("Invalid match ID");
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
+    const apply = async (session: ClientSession): Promise<void> => {
         // A second concurrent processor must either see the completed flag or
         // conflict and retry. Awarding coins and setting the flag are atomic.
         const match = await TournamentMatch.findById(matchId).session(session);
@@ -63,7 +61,15 @@ export class DivisionService {
         match.divisionChangesProcessed = true;
         match.bountyCoinsDistributed = true;
         await match.save({ session });
-      });
+
+    };
+    if (providedSession) {
+      await apply(providedSession);
+      return;
+    }
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => apply(session));
     } finally {
       await session.endSession();
     }

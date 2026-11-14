@@ -1,3 +1,4 @@
+import { finalizeMatchWithRewards, MatchResultError } from "../services/tournamentResultService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
@@ -148,65 +149,9 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
         });
       }
 
-      const match = await TournamentMatch.findById(matchId);
-      if (!match) {
-        return reply.status(404).send({
-          success: false,
-          message: "Match not found",
-        });
-      }
-
-      if (match.status === "completed") {
-        return reply.status(400).send({
-          success: false,
-          message: "Match already completed",
-        });
-      }
-
-      // Validate winner and loser
-      if (
-        winnerId !== match.squad1.toString() &&
-        winnerId !== match.squad2.toString()
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Winner must be one of the participating squads",
-        });
-      }
-
-      if (
-        loserId !== match.squad1.toString() &&
-        loserId !== match.squad2.toString()
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Loser must be one of the participating squads",
-        });
-      }
-
-      if (winnerId === loserId) {
-        return reply.status(400).send({
-          success: false,
-          message: "Winner and loser cannot be the same",
-        });
-      }
-
-      // Update match
-      match.winner = winnerId;
-      match.loser = loserId;
-      match.status = "completed";
-      match.endTime = new Date();
-      match.score = score;
-      match.adminNotes = adminNotes;
-      if (typeof applyLoserDeduction === "boolean") {
-        (match as any).applyLoserDeduction = applyLoserDeduction;
-      }
-
-      // Save match first so service can read the updated winner/loser
-      await match.save();
-
-      // Process bounty coins and division changes
-      await DivisionService.processMatchResult(matchId);
+      const match = await finalizeMatchWithRewards(matchId, {
+        winnerId, loserId, score, adminNotes, applyLoserDeduction,
+      });
 
       // Trigger achievement checks for match completion
       try {
@@ -337,6 +282,9 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
         match: updatedMatch,
       });
     } catch (error) {
+      if (error instanceof MatchResultError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
       console.error("Error updating match result:", error);
       return reply.status(500).send({
         success: false,
