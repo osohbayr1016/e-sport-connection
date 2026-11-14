@@ -182,6 +182,90 @@ export async function startTournamentWithBrackets(tournamentId: string): Promise
   }
 }
 
+
+// Progression must be serialized across all API instances. A committed match
+// can be safely retried using the admin recovery endpoint below.
+export async function advanceCompletedTournamentRound(
+  tournamentId: string,
+  round: number
+): Promise<"not_ready" | "advanced" | "completed" | "skipped" | "already_advanced"> {
+  if (!mongoose.isValidObjectId(tournamentId) || !Number.isSafeInteger(round) || round < 1) {
+    throw new Error("Invalid tournament or round");
+  }
+  const { default: Tournament } = await import("../models/Tournament");
+  const session = await mongoose.startSession();
+  let result: "not_ready" | "advanced" | "completed" | "skipped" | "already_advanced" = "not_ready";
+  try {
+    await session.withTransaction(async () => {
+      // A real DB write locks the tournament and forces concurrent progressors
+      // to retry rather than generating duplicate match numbers or rounds.
+      const tournament = await Tournament.findOneAndUpdate(
+        { _id: tournamentId, status: "ongoing" },
+        { $inc: { bracketRevision: 1 } },
+        { session, new: true }
+      );
+      if (!tournament) { result = "skipped"; return; }
+      const currentRound = await TournamentMatch.find({
+        tournament: tournamentId, round,
+      }).sort({ matchNumber: 1 }).session(session);
+      if (!currentRound.length || currentRound.some(match => match.status !== "completed" || !match.winner)) {
+        result = "not_ready"; return;
+      }
+      if (tournament.format === "Round Robin") {
+        // Round-robin is pre-generated as a complete schedule. Never
+        // transform it into a single-elimination bracket.
+        const outstanding = await TournamentMatch.exists({
+          tournament: tournamentId, status: { $ne: "completed" },
+        }).session(session);
+        if (!outstanding) {
+          await Tournament.updateOne({ _id: tournamentId, status: "ongoing" },
+            { $set: { status: "completed", endDate: new Date() } }, { session });
+          result = "completed";
+        } else result = "not_ready";
+        return;
+      }
+      if (tournament.format !== "Single Elimination") {
+        result = "skipped"; return; // Double-elimination progression needs its own engine.
+      }
+      const nextRound = round + 1;
+      if (await TournamentMatch.exists({ tournament: tournamentId, round: nextRound }).session(session)) {
+        result = "already_advanced"; return;
+      }
+      const winners = currentRound.map(match => match.winner!.toString());
+      if (new Set(winners).size !== winners.length) {
+        throw new Error("Duplicate winner in tournament bracket");
+      }
+      if (winners.length === 1) {
+        await Tournament.updateOne({ _id: tournamentId, status: "ongoing" },
+          { $set: { status: "completed", endDate: new Date() } }, { session });
+        result = "completed";
+        return;
+      }
+      const last = await TournamentMatch.findOne({ tournament: tournamentId })
+        .sort({ matchNumber: -1 }).session(session);
+      let matchNumber = (last?.matchNumber || 0) + 1;
+      const created = [];
+      for (let index = 0; index < winners.length; index += 2) {
+        const left = winners[index], right = winners[index + 1];
+        created.push({
+          tournament: new mongoose.Types.ObjectId(tournamentId),
+          matchNumber: matchNumber++,
+          round: nextRound,
+          squad1: new mongoose.Types.ObjectId(left),
+          squad2: right ? new mongoose.Types.ObjectId(right) : null,
+          ...(right ? { status: "scheduled", matchType: "normal" } :
+            { status: "completed", matchType: "auto_win", winner: new mongoose.Types.ObjectId(left), bountyCoinAmount: 0 }),
+        });
+      }
+      await TournamentMatch.insertMany(created, { session });
+      result = "advanced";
+    });
+  } finally {
+    await session.endSession();
+  }
+  return result;
+}
+
 // Get squad statistics for a tournament
 export function getSquadStats(matches: any[]): Record<string, any> {
   const stats: Record<string, any> = {};
