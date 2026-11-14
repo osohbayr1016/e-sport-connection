@@ -201,7 +201,16 @@ squadSchema.index({ currentBountyCoins: 1 });
 
 // Validation: Ensure leader is in members array
 squadSchema.pre("save", function (next) {
-  if (!this.members.includes(this.leader)) {
+  // ObjectIds loaded independently can represent the same account without
+  // having object identity. Normalize and deduplicate by their string value.
+  const seen = new Set<string>();
+  this.members = this.members.filter((member) => {
+    const id = member.toString();
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  if (this.leader && !seen.has(this.leader.toString())) {
     this.members.push(this.leader);
   }
 
