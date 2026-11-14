@@ -20,46 +20,40 @@ const bountyCoinRoutes: FastifyPluginAsync = async (
   });
 
   // Get user's bounty coin balance
-  fastify.get("/balance/:userId", async (request, reply) => {
+  fastify.get("/balance/:userId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
+      const actor = (request as any).user;
+      if (!actor || (actor.id !== userId && actor.role !== "ADMIN")) {
+        return reply.status(403).send({ success: false, message: "Access denied" });
+      }
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return reply.status(400).send({ success: false, message: "Invalid user ID" });
+      }
 
       // Check if user has bounty coin data
       let bountyCoinData = await BountyCoin.findOne({ userId }).lean();
 
       if (!bountyCoinData) {
-        // If no bounty coin data exists, create it from squad data
+        // A GET must not create financial ledger records. Return the existing
+        // squad-derived summary without mutating the database.
         const squad = await Squad.findOne({
           $or: [{ leader: userId }, { members: userId }],
         })
-          .select(
-            "currentBountyCoins totalBountyCoinsEarned totalBountyCoinsSpent division"
-          )
+          .select("currentBountyCoins totalBountyCoinsEarned totalBountyCoinsSpent division")
           .lean();
 
-        if (squad) {
-          const newBountyCoin = new BountyCoin({
-            userId: userId,
-            squadId: squad._id,
-            balance: squad.currentBountyCoins || 0,
-            totalEarned: squad.totalBountyCoinsEarned || 0,
-            totalSpent: squad.totalBountyCoinsSpent || 0,
+        return reply.send({
+          success: true,
+          data: {
+            userId,
+            squadId: squad?._id,
+            balance: squad?.currentBountyCoins || 0,
+            totalEarned: squad?.totalBountyCoinsEarned || 0,
+            totalSpent: squad?.totalBountyCoinsSpent || 0,
             transactions: [],
-          });
-          await newBountyCoin.save();
-          bountyCoinData = await BountyCoin.findOne({ userId }).lean();
-        } else {
-          // Create default bounty coin data for user
-          const newBountyCoin = new BountyCoin({
-            userId: userId,
-            balance: 0,
-            totalEarned: 0,
-            totalSpent: 0,
-            transactions: [],
-          });
-          await newBountyCoin.save();
-          bountyCoinData = await BountyCoin.findOne({ userId }).lean();
-        }
+          },
+        });
       }
 
       return reply.send({
@@ -76,9 +70,16 @@ const bountyCoinRoutes: FastifyPluginAsync = async (
   });
 
   // Get user's bounty coin transactions
-  fastify.get("/transactions/:userId", async (request, reply) => {
+  fastify.get("/transactions/:userId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
+      const actor = (request as any).user;
+      if (!actor || (actor.id !== userId && actor.role !== "ADMIN")) {
+        return reply.status(403).send({ success: false, message: "Access denied" });
+      }
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return reply.status(400).send({ success: false, message: "Invalid user ID" });
+      }
 
       const bountyCoinData = await BountyCoin.findOne({ userId }).lean();
 

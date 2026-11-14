@@ -38,3 +38,13 @@ test("production deployment requires explicit manual confirmation", () => {
   const workflow = source(".github/workflows/deploy-community-worker.yml");
   assert.ok(workflow.includes("github.event_name == 'workflow_dispatch' && inputs.confirm_deploy == 'YES'"));
 });
+
+test("bounty balances and transaction history are private and GET stays read-only", () => {
+  const sourceCode = source("backend/src/routes/bountyCoinRoutes.ts");
+  assert.ok(sourceCode.includes('fastify.get("/balance/:userId", { preHandler: [authenticateToken] }'));
+  assert.ok(sourceCode.includes('fastify.get("/transactions/:userId", { preHandler: [authenticateToken] }'));
+  assert.ok(sourceCode.includes('actor.id !== userId && actor.role !== "ADMIN"'));
+  const balanceRead = sourceCode.slice(sourceCode.indexOf('fastify.get("/balance/:userId"'), sourceCode.indexOf('fastify.get("/transactions/:userId"'));
+  assert.ok(!balanceRead.includes("new BountyCoin("));
+  assert.ok(!balanceRead.includes(".save()"));
+});
