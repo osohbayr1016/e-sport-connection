@@ -1,13 +1,13 @@
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryReplSet;
 process.env.JWT_SECRET = "integration-test-only-strong-secret-with-32-chars";
 process.env.NODE_ENV = "test";
 
 beforeAll(async () => {
   // Start in-memory MongoDB instance
-  mongoServer = await MongoMemoryServer.create();
+  mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } });
   const mongoUri = mongoServer.getUri();
 
   // Connect to the in-memory database
