@@ -1,46 +1,11 @@
 name: Community feedback checks
 
 on:
-  workflow_dispatch:
   pull_request:
-    paths:
-      - "community-worker/**"
-      - "frontend/src/app/feedback/**"
-      - "frontend/src/app/api/community/**"
-      - "frontend/src/app/page.tsx"
-      - "frontend/src/app/components/Navigation.tsx"
-      - "frontend/src/app/components/Footer.tsx"
-      - "frontend/src/app/components/ServiceState.tsx"
-      - "frontend/src/app/players/**"
-      - "frontend/src/app/tournaments/**"
-      - "frontend/src/lib/communityRead.ts"
-      - "frontend/src/app/contexts/AuthContext.tsx"
-      - "frontend/src/app/hooks/**"
-      - "frontend/jest.config.js"
-      - ".github/workflows/community-feedback.yml"
-      - "backend/src/controllers/authController.ts"
-      - "backend/src/routes/userRoutes.ts"
-      - "frontend/src/app/admin-setup/page.tsx"
-      - "security/tests/**"
-      - "backend/src/routes/newsRoutes.ts"
-      - "backend/src/routes/adminAchievementRoutes.ts"
+    branches: [main, sport]
   push:
-    branches: [sport]
-    paths:
-      - "community-worker/**"
-      - "frontend/src/app/feedback/**"
-      - "frontend/src/app/api/community/**"
-      - "frontend/src/app/page.tsx"
-      - "frontend/src/app/components/Navigation.tsx"
-      - "frontend/src/app/components/Footer.tsx"
-      - "frontend/src/app/components/ServiceState.tsx"
-      - "frontend/src/app/players/**"
-      - "frontend/src/app/tournaments/**"
-      - "frontend/src/lib/communityRead.ts"
-      - "frontend/src/app/contexts/AuthContext.tsx"
-      - "frontend/src/app/hooks/**"
-      - "frontend/jest.config.js"
-      - ".github/workflows/community-feedback.yml"
+    branches: [main, sport]
+  workflow_dispatch:
 
 permissions:
   contents: read
