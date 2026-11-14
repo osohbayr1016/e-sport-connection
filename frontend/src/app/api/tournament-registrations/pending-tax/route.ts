@@ -6,15 +6,20 @@ export async function GET(request: NextRequest) {
     const page = searchParams.get("page") || "1";
     const limit = searchParams.get("limit") || "10";
 
-    // Call backend API
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:5001";
+    const authorization = request.headers.get("authorization");
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ success: false, message: "Admin authentication required" }, { status: 401 });
+    }
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
     const response = await fetch(
       `${backendUrl}/api/tournament-registrations/pending-tax?page=${page}&limit=${limit}`,
       {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          Authorization: authorization,
         },
+        cache: "no-store",
       }
     );
 

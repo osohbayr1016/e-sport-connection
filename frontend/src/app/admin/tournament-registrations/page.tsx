@@ -40,6 +40,7 @@ interface TournamentRegistration {
   }>;
   registrationFee: number;
   paymentStatus: "pending" | "paid" | "failed" | "refunded";
+  paymentReference?: string;
   paymentProof?: string;
   registrationDate: string;
   isApproved: boolean;
@@ -54,7 +55,7 @@ interface TournamentRegistration {
 }
 
 export default function AdminTournamentRegistrationsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, getToken } = useAuth();
   const [registrations, setRegistrations] = useState<TournamentRegistration[]>(
     []
   );
@@ -64,6 +65,8 @@ export default function AdminTournamentRegistrationsPage() {
     useState<TournamentRegistration | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
 
   useEffect(() => {
     if (!authLoading && user?.role === "ADMIN") {
@@ -74,8 +77,11 @@ export default function AdminTournamentRegistrationsPage() {
   const fetchRegistrations = async () => {
     try {
       setLoading(true);
+      const token = getToken();
+      if (!token) { setMessage("Admin session expired. Sign in again."); return; }
       const response = await fetch(
-        API_ENDPOINTS.TOURNAMENT_REGISTRATIONS.PENDING_TAX
+        API_ENDPOINTS.TOURNAMENT_REGISTRATIONS.PENDING_TAX,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await response.json();
 
@@ -97,6 +103,13 @@ export default function AdminTournamentRegistrationsPage() {
     action: "approve" | "reject"
   ) => {
     if (!user?.id) return;
+    const token = getToken();
+    if (!token) { setMessage("Admin session expired. Sign in again."); return; }
+    const current = registrations.find(item => item._id === registrationId) || selectedRegistration;
+    if (action === "approve" && current?.paymentStatus !== "paid") {
+      setMessage("Confirm the bank payment and record its reference before approval.");
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -105,9 +118,9 @@ export default function AdminTournamentRegistrationsPage() {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            adminId: user.id,
             action,
             reason: action === "reject" ? rejectionReason : undefined,
           }),
@@ -129,6 +142,38 @@ export default function AdminTournamentRegistrationsPage() {
       console.error(`Error ${action}ing registration:`, error);
       setMessage(`Error ${action}ing registration`);
     }
+  };
+
+  const verifyPayment = async (registrationId: string) => {
+    const token = getToken();
+    if (!token) { setMessage("Admin session expired. Sign in again."); return; }
+    const reference = paymentReference.trim();
+    if (!/^[A-Za-z0-9_-]{6,80}$/.test(reference)) {
+      setMessage("Enter the independently verified bank transfer reference (6–80 characters).");
+      return;
+    }
+    if (!window.confirm("Have you independently checked this transfer with the bank? A screenshot alone is not proof.")) return;
+    setVerifyingPayment(true);
+    try {
+      const response = await fetch(API_ENDPOINTS.TOURNAMENT_REGISTRATIONS.PAYMENT(registrationId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ paymentStatus: "paid", paymentReference: reference }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        setMessage(result.message || "Unable to record bank verification");
+        return;
+      }
+      setMessage("Bank reference recorded. Registration can now be reviewed.");
+      setPaymentReference("");
+      setSelectedRegistration(previous => previous && previous._id === registrationId
+        ? { ...previous, paymentStatus: "paid", paymentReference: result.registration.paymentReference }
+        : previous);
+      await fetchRegistrations();
+    } catch (error) {
+      setMessage("Unable to verify payment. Try again.");
+    } finally { setVerifyingPayment(false); }
   };
 
   const getStatusColor = (status: string) => {
@@ -375,10 +420,12 @@ export default function AdminTournamentRegistrationsPage() {
                       {registration.approvalStatus === "pending" && (
                         <>
                           <button
+                            disabled={registration.paymentStatus !== "paid"}
+                            title={registration.paymentStatus !== "paid" ? "Verify payment in details first" : "Approve registration"}
                             onClick={() =>
                               handleApproval(registration._id, "approve")
                             }
-                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
+                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
                           >
                             <CheckCircle className="w-4 h-4" />
                             <span>Approve</span>
@@ -536,6 +583,30 @@ export default function AdminTournamentRegistrationsPage() {
                   </div>
                 )}
 
+                {/* Manual bank verification is separate from competition approval. */}
+                {selectedRegistration.approvalStatus === "pending" && selectedRegistration.paymentStatus !== "paid" && (
+                  <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+                    <h4 className="font-medium text-amber-800 dark:text-amber-200">Verify bank payment</h4>
+                    <p className="text-sm text-amber-700 dark:text-amber-300">Confirm transfer in your bank system, not from the screenshot alone.</p>
+                    <label htmlFor="payment-reference" className="block text-sm">Bank transfer reference</label>
+                    <input
+                      id="payment-reference"
+                      value={paymentReference}
+                      onChange={event => setPaymentReference(event.target.value)}
+                      maxLength={80}
+                      placeholder="BANK-TRANSFER-123456"
+                      className="w-full rounded-lg border px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      disabled={verifyingPayment || !/^[A-Za-z0-9_-]{6,80}$/.test(paymentReference.trim())}
+                      onClick={() => verifyPayment(selectedRegistration._id)}
+                      className="rounded-lg bg-amber-600 px-4 py-2 text-white disabled:opacity-50"
+                    >
+                      {verifyingPayment ? "Recording..." : "Record verified bank transfer"}
+                    </button>
+                  </div>
+                )}
                 {/* Approval Actions */}
                 {selectedRegistration.approvalStatus === "pending" && (
                   <div className="space-y-4">
@@ -558,10 +629,11 @@ export default function AdminTournamentRegistrationsPage() {
 
                     <div className="flex space-x-3">
                       <button
+                        disabled={selectedRegistration.paymentStatus !== "paid"}
                         onClick={() =>
                           handleApproval(selectedRegistration._id, "approve")
                         }
-                        className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
+                        className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
                       >
                         <CheckCircle className="w-4 h-4" />
                         <span>Approve Registration</span>
