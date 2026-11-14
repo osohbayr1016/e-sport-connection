@@ -231,33 +231,9 @@ export class DivisionService {
     };
   }
 
-  /**
-   * Purchase bounty coins
-   */
-  static async purchaseBountyCoins(
-    squadId: string,
-    amount: number
-  ): Promise<{ success: boolean; message: string; newBalance: number }> {
-    const squad = await Squad.findById(squadId);
-    if (!squad) {
-      throw new Error("Squad not found");
-    }
-
-    const divisionConfig = DIVISION_CONFIG[squad.division];
-    const costPer50 = divisionConfig.bountyCoinPrice;
-    const totalCost = (amount / 50) * costPer50;
-
-    // Here you would integrate with payment system
-    // For now, we'll just update the bounty coins
-    squad.currentBountyCoins += amount;
-    squad.totalBountyCoinsEarned += amount;
-
-    await squad.save();
-
-    return {
-      success: true,
-      message: `Successfully purchased ${amount} bounty coins for ${totalCost} MNT`,
-      newBalance: squad.currentBountyCoins,
-    };
+  /** Unsafe legacy direct minting is intentionally unavailable. */
+  static async purchaseBountyCoins(_squadId: string, _amount: number): Promise<never> {
+    throw new Error("Direct coin minting is disabled: verify a purchase in the audited finance workflow");
   }
+
 }
