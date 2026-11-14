@@ -186,7 +186,12 @@ const tournamentRoutes: FastifyPluginAsync = async (
       // Relax validation: allow registration deadline to be on/after start date,
       // since registration stays open until admin starts the tournament.
 
-      const newTournament = new Tournament({ ...tournamentData, maxSquads: Number(maxSquads), currentSquads: 0 });
+      const newTournament = new Tournament({
+        ...tournamentData,
+        maxSquads: Number(maxSquads),
+        currentSquads: 0,
+        entryFee: tournamentData.tournamentType === "free" ? 0 : tournamentData.entryFee,
+      });
       await newTournament.save();
 
       return reply.status(201).send({
@@ -382,63 +387,22 @@ const tournamentRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Start tournament and generate matches (admin only)
+  // Start and generate matches atomically: no ongoing event without its first bracket.
   fastify.post("/:id/start", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-
-      // Check if tournament exists
-      const tournament = await Tournament.findById(id);
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-
-      // Allow admin to start tournament anytime unless already ongoing/completed
-      if (
-        tournament.status === "ongoing" ||
-        tournament.status === "completed"
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament already started or completed",
-        });
-      }
-
-      // Check if there are enough squads
-      if (tournament.currentSquads < 2) {
-        return reply.status(400).send({
-          success: false,
-          message: "Need at least 2 squads to start tournament",
-        });
-      }
-
-      // Update tournament status to ongoing
-      await Tournament.findByIdAndUpdate(id, {
-        status: "ongoing",
-        startDate: new Date(),
-      });
-
-      // Generate matches using the tournament match service
-      const { generateTournamentMatches } = await import(
-        "../services/tournamentMatchService"
-      );
-      await generateTournamentMatches(id);
-
+      const { startTournamentWithBrackets } = await import("../services/tournamentMatchService");
+      await startTournamentWithBrackets(id);
       return reply.status(200).send({
         success: true,
-        message: "Tournament started successfully and matches generated",
+        message: "Tournament started and matches generated",
         tournamentId: id,
       });
     } catch (error) {
-      console.error("Tournament start error:", error);
-      return reply.status(500).send({
+      request.log.error({ error }, "Tournament start failed");
+      return reply.status(409).send({
         success: false,
-        message: "Failed to start tournament",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
+        message: error instanceof Error ? error.message : "Unable to start tournament",
       });
     }
   });

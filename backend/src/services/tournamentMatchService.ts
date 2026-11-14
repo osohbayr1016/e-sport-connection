@@ -102,8 +102,20 @@ export function generateBracketMatches(
 
 // Generate tournament matches for a specific tournament
 export async function generateTournamentMatches(
-  tournamentId: string
+  tournamentId: string,
+  session?: mongoose.ClientSession
 ): Promise<void> {
+  if (!session) {
+    const ownSession = await mongoose.startSession();
+    try {
+      await ownSession.withTransaction(async () => {
+        await generateTournamentMatches(tournamentId, ownSession);
+      });
+    } finally {
+      await ownSession.endSession();
+    }
+    return;
+  }
   try {
     // Get all registered squads for this tournament
     const registrations = await TournamentRegistration.find({
@@ -111,7 +123,7 @@ export async function generateTournamentMatches(
       status: "registered",
       isApproved: true,
       isBanned: { $ne: true },
-    }).populate("squad");
+    }).populate("squad").session(session);
 
     if (registrations.length < 2) {
       throw new Error("Need at least 2 squads to generate matches");
@@ -121,9 +133,17 @@ export async function generateTournamentMatches(
 
     // Get tournament format
     const { default: Tournament } = await import("../models/Tournament");
-    const tournament = await Tournament.findById(tournamentId);
+    const tournament = await Tournament.findById(tournamentId).session(session);
     if (!tournament) {
       throw new Error("Tournament not found");
+    }
+
+    // Prevent duplicate brackets even if the caller bypasses the route-level guard.
+    if (await TournamentMatch.exists({ tournament: tournamentId }).session(session)) {
+      throw new Error("Matches already generated for this tournament");
+    }
+    if (!["Single Elimination", "Double Elimination", "Round Robin"].includes(tournament.format)) {
+      throw new Error("Unsupported tournament format");
     }
 
     // Generate matches based on tournament format
@@ -134,11 +154,31 @@ export async function generateTournamentMatches(
     );
 
     // Save matches to database
-    await TournamentMatch.insertMany(matches);
+    await TournamentMatch.insertMany(matches, { session });
 
     } catch (error) {
     console.error("Error generating tournament matches:", error);
     throw error;
+  }
+}
+
+
+export async function startTournamentWithBrackets(tournamentId: string): Promise<void> {
+  if (!mongoose.isValidObjectId(tournamentId)) throw new Error("Invalid tournament ID");
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const { default: Tournament } = await import("../models/Tournament");
+      // The status transition locks competing starts, and rolls back if match generation fails.
+      const started = await Tournament.findOneAndUpdate({
+        _id: tournamentId,
+        status: { $in: ["upcoming", "registration_open", "registration_closed"] },
+      }, { $set: { status: "ongoing", startDate: new Date() } }, { session, new: true });
+      if (!started) throw new Error("Tournament already started, cancelled or missing");
+      await generateTournamentMatches(tournamentId, session);
+    });
+  } finally {
+    await session.endSession();
   }
 }
 
