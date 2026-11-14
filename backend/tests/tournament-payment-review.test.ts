@@ -62,5 +62,11 @@ describe("paid tournament review and capacity",()=>{
   expect((await reject()).statusCode).toBe(409);
   expect((await Tournament.findById(f.tournament.id))!.currentSquads).toBe(0);
   expect((await TournamentRegistration.findById(f.registration.id))!.approvalStatus).toBe("rejected");
+  const cancel=await app.inject({
+    method:"DELETE",url:"/api/tournament-registrations/"+f.registration.id,
+    headers:header(f.leader),
+  });
+  expect(cancel.statusCode).toBe(409);
+  expect((await Tournament.findById(f.tournament.id))!.currentSquads).toBe(0);
  });
 });
