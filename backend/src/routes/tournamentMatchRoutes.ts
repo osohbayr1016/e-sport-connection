@@ -42,7 +42,9 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
       // Get all registered squads for this tournament
       const registrations = await TournamentRegistration.find({
         tournament: tournamentId,
-        status: "approved",
+        status: "registered",
+        isApproved: true,
+        isBanned: { $ne: true },
       }).populate("squad");
 
       if (registrations.length < 2) {
@@ -717,7 +719,9 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
       // Get all approved registrations for this tournament
       const registrations = await TournamentRegistration.find({
         tournament: tournamentId,
-        status: "approved",
+        status: "registered",
+        isApproved: true,
+        isBanned: { $ne: true },
       }).populate("squad", "name tag logo division currentBountyCoins level");
 
       const squads = registrations.map((reg: any) => reg.squad);

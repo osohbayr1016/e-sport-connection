@@ -109,6 +109,8 @@ export async function generateTournamentMatches(
     const registrations = await TournamentRegistration.find({
       tournament: tournamentId,
       status: "registered",
+      isApproved: true,
+      isBanned: { $ne: true },
     }).populate("squad");
 
     if (registrations.length < 2) {

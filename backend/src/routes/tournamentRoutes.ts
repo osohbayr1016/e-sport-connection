@@ -145,14 +145,18 @@ const tournamentRoutes: FastifyPluginAsync = async (
         "startDate",
         "endDate",
         "prizePool",
-        "maxParticipants",
+        "maxSquads",
         "location",
         "organizer",
         "registrationDeadline",
       ];
+      const maxSquads = tournamentData.maxSquads ?? tournamentData.maxParticipants;
       const missingFields = requiredFields.filter(
-        (field) => !tournamentData[field]
+        (field) => field === "maxSquads" ? maxSquads === undefined : !tournamentData[field]
       );
+      if (!Number.isSafeInteger(Number(maxSquads)) || Number(maxSquads) < 2 || Number(maxSquads) > 256) {
+        return reply.status(400).send({ success: false, message: "maxSquads must be between 2 and 256" });
+      }
 
       if (missingFields.length > 0) {
         return reply.status(400).send({
@@ -169,6 +173,9 @@ const tournamentRoutes: FastifyPluginAsync = async (
         tournamentData.registrationDeadline
       );
 
+      if (![startDate, endDate, registrationDeadline].every(d => Number.isFinite(d.getTime()))) {
+        return reply.status(400).send({ success: false, message: "Invalid tournament date" });
+      }
       if (startDate >= endDate) {
         return reply.status(400).send({
           success: false,
@@ -179,7 +186,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
       // Relax validation: allow registration deadline to be on/after start date,
       // since registration stays open until admin starts the tournament.
 
-      const newTournament = new Tournament(tournamentData);
+      const newTournament = new Tournament({ ...tournamentData, maxSquads: Number(maxSquads), currentSquads: 0 });
       await newTournament.save();
 
       return reply.status(201).send({
