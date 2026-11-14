@@ -1,9 +1,14 @@
+import TournamentMatch from "../models/TournamentMatch";
 import { createTournamentRegistration, handleTournamentRegistrationError } from "../services/tournamentRegistrationService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
 import Tournament from "../models/Tournament";
 import TournamentRegistration from "../models/TournamentRegistration";
+
+class TournamentDeletionError extends Error {
+  constructor(public statusCode: number, message: string) { super(message); }
+}
 
 const tournamentRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance
@@ -225,77 +230,115 @@ const tournamentRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Update tournament (admin only)
+  // Update display/settings only. State, participant count and brackets are server-controlled.
   fastify.put("/:id", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const updateData = request.body as any;
-
-      // Validate dates if provided
-      if (updateData.startDate && updateData.endDate) {
-        const startDate = new Date(updateData.startDate);
-        const endDate = new Date(updateData.endDate);
-
-        if (startDate >= endDate) {
-          return reply.status(400).send({
-            success: false,
-            message: "End date must be after start date",
-          });
-        }
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: "Invalid tournament ID" });
       }
-
-      // Relaxed: do not force registrationDeadline before startDate
-
-      const tournament = await Tournament.findByIdAndUpdate(id, updateData, {
-        new: true,
-        runValidators: true,
-      });
-
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
+      const payload = request.body as Record<string, unknown>;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        return reply.status(400).send({ success: false, message: "Expected tournament fields" });
+      }
+      const editable = new Set([
+        "name", "description", "game", "startDate", "endDate", "prizePool",
+        "prizeDistribution", "maxSquads", "location", "organizer",
+        "organizerLogo", "bannerImage", "rules", "registrationDeadline",
+        "entryFee", "tournamentType", "format",
+      ]);
+      const keys = Object.keys(payload);
+      if (!keys.length || keys.some(key => !editable.has(key))) {
+        return reply.status(400).send({
+          success: false, message: "Unsupported or server-managed tournament field",
         });
       }
-
-      return reply.status(200).send({
-        success: true,
-        message: "Tournament updated successfully",
-        tournament,
-      });
-    } catch (error) {
-      console.error("Update tournament error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to update tournament",
-      });
+      const current = await Tournament.findById(id);
+      if (!current) return reply.status(404).send({ success: false, message: "Tournament not found" });
+      if (["ongoing", "completed", "cancelled"].includes(current.status)) {
+        return reply.status(409).send({ success: false, message: "Active or finished tournament settings are locked" });
+      }
+      const protectedFields = ["game", "format", "tournamentType", "entryFee", "registrationDeadline"];
+      if (current.currentSquads > 0 && keys.some(key => protectedFields.includes(key))) {
+        return reply.status(409).send({ success: false, message: "Competition format and payment terms are locked after registration" });
+      }
+      const maxSquads = payload.maxSquads === undefined ? current.maxSquads : Number(payload.maxSquads);
+      if (!Number.isSafeInteger(maxSquads) || maxSquads < 2 || maxSquads > 256) {
+        return reply.status(400).send({ success: false, message: "maxSquads must be an integer between 2 and 256" });
+      }
+      const startDate = new Date((payload.startDate ?? current.startDate) as string | Date);
+      const endDate = new Date((payload.endDate ?? current.endDate) as string | Date);
+      const deadline = new Date((payload.registrationDeadline ?? current.registrationDeadline) as string | Date);
+      if (![startDate, endDate, deadline].every(date => Number.isFinite(date.getTime())) || startDate >= endDate) {
+        return reply.status(400).send({ success: false, message: "Invalid tournament dates" });
+      }
+      if (payload.tournamentType === "free" && payload.entryFee !== undefined && Number(payload.entryFee) !== 0) {
+        return reply.status(400).send({ success: false, message: "Free tournaments cannot charge an entry fee" });
+      }
+      if (payload.entryFee !== undefined &&
+          (typeof payload.entryFee !== "number" || !Number.isFinite(payload.entryFee) || payload.entryFee < 0)) {
+        return reply.status(400).send({ success: false, message: "Invalid entry fee" });
+      }
+      const changes: Record<string, unknown> = {};
+      for (const key of keys) changes[key] = payload[key];
+      if (payload.tournamentType === "free") changes.entryFee = 0;
+      // Conditional write prevents shrinking below a concurrently reserved slot.
+      const updated = await Tournament.findOneAndUpdate(
+        { _id: id, status: { $in: ["upcoming", "registration_open", "registration_closed"] },
+          currentSquads: { $lte: maxSquads },
+          ...(protectedFields.some(key => keys.includes(key)) ? { currentSquads: 0 } : {}) },
+        { $set: changes },
+        { new: true, runValidators: true }
+      );
+      if (!updated) {
+        return reply.status(409).send({ success: false, message: "Registration count or tournament status changed; refresh and retry" });
+      }
+      return reply.send({ success: true, message: "Tournament updated", tournament: updated });
+    } catch (error: any) {
+      if (error.name === "ValidationError" || error.name === "CastError") {
+        return reply.status(400).send({ success: false, message: "Invalid tournament settings" });
+      }
+      request.log.error({ error }, "Tournament update failed");
+      return reply.status(500).send({ success: false, message: "Unable to update tournament" });
     }
   });
 
-  // Delete tournament (admin only)
+  // A tournament with participants or matches cannot be hard-deleted.
+  // Requiring an empty event prevents orphaned payment and bracket records.
   fastify.delete("/:id", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!mongoose.isValidObjectId(id)) {
+      return reply.status(400).send({ success: false, message: "Invalid tournament ID" });
+    }
+    const session = await mongoose.startSession();
     try {
-      const { id } = request.params as { id: string };
-
-      const tournament = await Tournament.findByIdAndDelete(id);
-
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-
-      return reply.status(200).send({
-        success: true,
-        message: "Tournament deleted successfully",
+      let deleted = false;
+      await session.withTransaction(async () => {
+        const tournament = await Tournament.findById(id).session(session);
+        if (!tournament) return;
+        if (!["upcoming", "registration_open", "registration_closed"].includes(tournament.status)) {
+          throw new TournamentDeletionError(409, "Cannot delete an active or completed tournament");
+        }
+        const [participants, matches] = await Promise.all([
+          TournamentRegistration.exists({ tournament: id }).session(session),
+          TournamentMatch.exists({ tournament: id }).session(session),
+        ]);
+        if (participants || matches || tournament.currentSquads > 0) {
+          throw new TournamentDeletionError(409, "Tournament contains participants or matches; do not erase its history");
+        }
+        const outcome = await Tournament.deleteOne({ _id: id }, { session });
+        deleted = outcome.deletedCount === 1;
       });
+      if (!deleted) return reply.status(404).send({ success: false, message: "Tournament not found" });
+      return reply.send({ success: true, message: "Empty tournament deleted" });
     } catch (error) {
-      console.error("Delete tournament error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to delete tournament",
-      });
+      if (error instanceof TournamentDeletionError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
+      request.log.error({ error }, "Tournament delete failed");
+      return reply.status(500).send({ success: false, message: "Failed to delete tournament" });
+    } finally {
+      await session.endSession();
     }
   });
 
