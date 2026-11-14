@@ -3,8 +3,10 @@ import type { FastifyInstance } from "fastify";
 
 describe("authentication end-to-end", () => {
   let app: FastifyInstance;
-  beforeAll(async () => { app = await buildApp(); await app.ready(); });
-  afterAll(async () => { await app.close(); });
+  // Separate Fastify instances per test prevent one test's auth rate-limit
+  // attempts from throttling a later, unrelated test in this suite.
+  beforeEach(async () => { app = await buildApp(); await app.ready(); });
+  afterEach(async () => { await app.close(); });
 
   const register = (email = "player@example.com", role = "PLAYER") =>
     app.inject({ method: "POST", url: "/api/auth/register", payload: {
