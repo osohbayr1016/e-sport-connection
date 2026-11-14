@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+import { validateDirectMessageReply, InvalidDirectMessageReplyError } from "../services/directMessagePolicy";
 import { Server as SocketIOServer } from "socket.io";
 import { Server as HTTPServer } from "http";
 import jwt from "jsonwebtoken";
@@ -73,10 +75,13 @@ export class SocketManager {
           token,
           process.env.JWT_SECRET!
         ) as JWTPayload;
-        const user = await User.findById(decoded.id).select("_id").lean();
-        if (!user) return next(new Error("Invalid authentication session"));
+        const user = await User.findById(decoded.id).select("_id +tokenVersion").lean();
+        if (!user || (decoded.ver ?? 0) !== (user.tokenVersion ?? 0)) {
+          return next(new Error("Invalid or revoked authentication session"));
+        }
         socket.data.userId = user._id.toString();
         socket.data.userEmail = decoded.email;
+        socket.data.tokenVersion = user.tokenVersion ?? 0;
         next();
       } catch (error) {
         next(new Error("Invalid or expired authentication token"));
@@ -84,6 +89,27 @@ export class SocketManager {
     });
 
     this.io.on("connection", async (socket) => {
+      // HTTP logout bumps tokenVersion. Check it again on protected socket
+      // events, not only at initial handshake, so old open sockets cannot
+      // continue writing messages with a revoked credential.
+      const protectedEvents = new Set([
+        "send_message", "mark_read", "stream_chat_message",
+        "stream_reaction", "typing_start", "typing_stop", "update_status",
+      ]);
+      socket.use(async (packet, next) => {
+        try {
+          const event = packet[0];
+          if (!protectedEvents.has(event) || !socket.data.userId) return next();
+          const active = await User.findById(socket.data.userId).select("_id +tokenVersion").lean();
+          if (!active || (active.tokenVersion ?? 0) !== (socket.data.tokenVersion ?? 0)) {
+            socket.disconnect(true);
+            return next(new Error("Session revoked; please sign in again"));
+          }
+          next();
+        } catch (error) {
+          next(new Error("Unable to validate session"));
+        }
+      });
       // Only handle authenticated users
       if (socket.data.userId) {
         const firstConnection = this.connectedUsers.connect(socket.data.userId, socket.id);
@@ -139,10 +165,11 @@ export class SocketManager {
       // Handle message sending
       socket.on("send_message", async (data) => {
         try {
-          const { receiverId, content, replyToId } = data;
+          const { receiverId, content, replyToId } = data || {};
           const senderId = socket.data.userId;
           if (!senderId) { socket.emit("message_error", { error: "Authentication required" }); return; }
-          if (!receiverId || typeof content !== "string" || !content.trim() || content.length > 4000) {
+          if (typeof receiverId !== "string" || !mongoose.isValidObjectId(receiverId) ||
+              typeof content !== "string" || !content.trim() || content.length > 2000) {
             socket.emit("message_error", {
               error: "Invalid message data",
             });
@@ -169,6 +196,16 @@ export class SocketManager {
             return;
           }
 
+          // The reply target must belong to this exact two-person conversation.
+          try {
+            await validateDirectMessageReply(replyToId, senderId, receiverId);
+          } catch (error) {
+            if (error instanceof InvalidDirectMessageReplyError) {
+              socket.emit("message_error", { error: error.message });
+              return;
+            }
+            throw error;
+          }
           // Save message to database
           const newMessage = new Message({
             senderId,

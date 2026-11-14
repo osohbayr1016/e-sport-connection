@@ -3,8 +3,10 @@ import type { FastifyInstance } from "fastify";
 
 describe("authentication end-to-end", () => {
   let app: FastifyInstance;
-  beforeAll(async () => { app = await buildApp(); await app.ready(); });
-  afterAll(async () => { await app.close(); });
+  // Separate Fastify instances per test prevent one test's auth rate-limit
+  // attempts from throttling a later, unrelated test in this suite.
+  beforeEach(async () => { app = await buildApp(); await app.ready(); });
+  afterEach(async () => { await app.close(); });
 
   const register = (email = "player@example.com", role = "PLAYER") =>
     app.inject({ method: "POST", url: "/api/auth/register", payload: {
@@ -41,6 +43,29 @@ describe("authentication end-to-end", () => {
       payload: { email: "player@example.com", password: "incorrect" } });
     expect(login.statusCode).toBe(401);
     expect((await app.inject({ method: "GET", url: "/api/auth/me" })).statusCode).toBe(401);
+  });
+
+  test("logout invalidates both original and refreshed tokens", async () => {
+    const registration = await register("logout@example.com");
+    expect(registration.statusCode).toBe(201);
+    const token = registration.json().token;
+    const before = await app.inject({ method: "POST", url: "/api/auth/refresh",
+      headers: { authorization: "Bearer " + token } });
+    expect(before.statusCode).toBe(200);
+    const refreshedToken = before.json().token;
+    const logout = await app.inject({ method: "POST", url: "/api/auth/logout",
+      headers: { authorization: "Bearer " + token } });
+    expect(logout.statusCode).toBe(200);
+    for (const revoked of [token, refreshedToken]) {
+      const profile = await app.inject({ method: "GET", url: "/api/auth/me",
+        headers: { authorization: "Bearer " + revoked } });
+      expect(profile.statusCode).toBe(401);
+    }
+    const login = await app.inject({ method: "POST", url: "/api/auth/login",
+      payload: { email: "logout@example.com", password: "a-long-test-password" } });
+    expect(login.statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/auth/me",
+      headers: { authorization: "Bearer " + login.json().token } })).statusCode).toBe(200);
   });
 
   test("rejects duplicate emails", async () => {

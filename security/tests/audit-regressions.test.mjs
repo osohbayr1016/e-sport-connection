@@ -28,7 +28,8 @@ test("tournament audit actors come from authenticated request", () => {
 
 test("registration payment status and cancellations are protected", () => {
   const routes = source("backend/src/routes/tournamentRegistrationRoutes.ts");
-  assert.ok(routes.includes('"Invalid payment status"'));
+  assert.ok(routes.includes('"Only a pending payment can be verified or failed"'));
+  assert.ok(routes.includes("paymentReference: paymentReference!.trim().toUpperCase()"));
   const service = source("backend/src/services/tournamentRegistrationService.ts");
   assert.ok(service.includes("TournamentRegistration.findOneAndDelete("));
   assert.ok(service.includes('currentSquads: { $gt: 0 }'));

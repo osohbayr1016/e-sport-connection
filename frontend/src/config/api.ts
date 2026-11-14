@@ -84,6 +84,8 @@ export const API_ENDPOINTS = {
     PENDING_TAX: `${API_BASE_URL}/api/tournament-registrations/pending-tax`,
     APPROVE: (id: string) =>
       `${API_BASE_URL}/api/tournament-registrations/${id}/approve`,
+    PAYMENT: (id: string) =>
+      `${API_BASE_URL}/api/tournament-registrations/${id}/payment`,
   },
   DASHBOARD: {
     STATS: `${API_BASE_URL}/api/dashboard/stats`,

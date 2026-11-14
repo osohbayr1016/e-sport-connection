@@ -95,6 +95,7 @@ export async function cancelTournamentRegistration(registrationId: string, actor
   const existing = await TournamentRegistration.findById(registrationId);
   if (!existing) fail(404, "Registration not found");
   if (existing.squadLeader.toString() !== actorId) fail(403, "Only squad leader can cancel registration");
+  if (existing.approvalStatus === "rejected") fail(409, "Rejected registration already released its reserved slot");
   // Settled paid entries require a documented refund process; don't silently delete them.
   const tournament = await Tournament.findById(existing.tournament);
   if (!tournament) fail(404, "Tournament not found");
@@ -106,7 +107,7 @@ export async function cancelTournamentRegistration(registrationId: string, actor
   try {
     await session.withTransaction(async () => {
       const removed = await TournamentRegistration.findOneAndDelete(
-        { _id: registrationId, squadLeader: actorId },
+        { _id: registrationId, squadLeader: actorId, approvalStatus: { $ne: "rejected" } },
         { session }
       );
       if (!removed) fail(409, "Registration has already been cancelled");

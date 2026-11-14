@@ -1,3 +1,4 @@
+import { addSquadMemberAtomically, SquadMembershipError } from "../services/squadMembershipService";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
 import Squad from "../models/Squad";
@@ -551,7 +552,7 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       }
 
       // Verify the invitation is for this user
-      if (invitation.invitedUser.toString() !== userId) {
+      if (invitation.invitedUser.toString() !== userId || invitation.squad.toString() !== id) {
         return reply.status(403).send({
           success: false,
           message: "You can only respond to your own invitations",
@@ -577,47 +578,37 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       }
 
       if (response === "ACCEPT") {
-        // Add user to squad
-        const squad = await Squad.findById(invitation.squad);
-        if (!squad) {
-          return reply.status(404).send({
-            success: false,
-            message: "Squad not found",
+        const session = await mongoose.startSession();
+        try {
+          let updatedSquadId: mongoose.Types.ObjectId | undefined;
+          await session.withTransaction(async () => {
+            const claimed = await SquadInvitation.findOneAndUpdate(
+              { _id: invitationId, squad: id, invitedUser: userId,
+                status: InvitationStatus.PENDING, expiresAt: { $gt: new Date() } },
+              { $set: { status: InvitationStatus.ACCEPTED } },
+              { new: true, session }
+            );
+            if (!claimed) throw new SquadMembershipError(409, "Invitation changed or expired");
+            const updated = await addSquadMemberAtomically({ squadId: id, memberId: userId, session });
+            updatedSquadId = updated._id as mongoose.Types.ObjectId;
           });
-        }
-
-        if (squad.members.length >= squad.maxMembers) {
-          return reply.status(400).send({
-            success: false,
-            message: "Squad is now full",
-          });
-        }
-
-        squad.members.push(userId);
-        await squad.save();
-
-        invitation.status = InvitationStatus.ACCEPTED;
-        await invitation.save();
-
-        return reply.status(200).send({
-          success: true,
-          message: "Successfully joined squad",
-          squad: await Squad.findById(squad._id)
+          const squad = await Squad.findById(updatedSquadId)
             .populate("leader", "name avatar")
-            .populate("members", "name avatar")
-            .lean(),
-        });
+            .populate("members", "name avatar").lean();
+          return reply.send({ success: true, message: "Successfully joined squad", squad });
+        } finally { await session.endSession(); }
       } else {
-        // Decline invitation
-        invitation.status = InvitationStatus.DECLINED;
-        await invitation.save();
-
-        return reply.status(200).send({
-          success: true,
-          message: "Invitation declined",
-        });
+        const declined = await SquadInvitation.findOneAndUpdate(
+          { _id: invitationId, squad: id, invitedUser: userId, status: InvitationStatus.PENDING },
+          { $set: { status: InvitationStatus.DECLINED } }, { new: true }
+        );
+        if (!declined) return reply.status(409).send({ success: false, message: "Invitation already handled" });
+        return reply.send({ success: true, message: "Invitation declined" });
       }
     } catch (error) {
+      if (error instanceof SquadMembershipError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
       console.error("Respond to invitation error:", error);
       return reply.status(500).send({
         success: false,
@@ -792,7 +783,10 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         });
       }
 
-      // Only leader can respond to applications
+      // Only the requested squad's leader can respond.
+      if (application.squad.toString() !== id) {
+        return reply.status(403).send({ success: false, message: "Application belongs to a different squad" });
+      }
       if (squad.leader.toString() !== userId) {
         return reply.status(403).send({
           success: false,
@@ -809,46 +803,42 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       }
 
       if (response === "APPROVE") {
-        // Check if squad is full
-        if (squad.members.length >= squad.maxMembers) {
-          return reply.status(400).send({
-            success: false,
-            message: "Squad is now full",
+        const session = await mongoose.startSession();
+        try {
+          let updatedSquadId: mongoose.Types.ObjectId | undefined;
+          await session.withTransaction(async () => {
+            const claimed = await SquadApplication.findOneAndUpdate(
+              { _id: applicationId, squad: id, status: ApplicationStatus.PENDING },
+              { $set: { status: ApplicationStatus.APPROVED,
+                responseMessage: typeof responseMessage === "string" ? responseMessage.slice(0, 500) : "",
+                respondedBy: userId, respondedAt: new Date() } },
+              { new: true, session }
+            );
+            if (!claimed) throw new SquadMembershipError(409, "Application already processed");
+            const updated = await addSquadMemberAtomically({
+              squadId: id, memberId: claimed.applicant.toString(), leaderId: userId, session,
+            });
+            updatedSquadId = updated._id as mongoose.Types.ObjectId;
           });
-        }
-
-        // Add user to squad
-        squad.members.push(application.applicant);
-        await squad.save();
-
-        application.status = ApplicationStatus.APPROVED;
-        application.responseMessage = responseMessage;
-        application.respondedBy = userId;
-        application.respondedAt = new Date();
-        await application.save();
-
-        return reply.status(200).send({
-          success: true,
-          message: "Application approved and user added to squad",
-          squad: await Squad.findById(squad._id)
+          const result = await Squad.findById(updatedSquadId)
             .populate("leader", "name avatar")
-            .populate("members", "name avatar")
-            .lean(),
-        });
+            .populate("members", "name avatar").lean();
+          return reply.send({ success: true, message: "Application approved and user added to squad", squad: result });
+        } finally { await session.endSession(); }
       } else {
-        // Reject application
-        application.status = ApplicationStatus.REJECTED;
-        application.responseMessage = responseMessage;
-        application.respondedBy = userId;
-        application.respondedAt = new Date();
-        await application.save();
-
-        return reply.status(200).send({
-          success: true,
-          message: "Application rejected",
-        });
+        const rejected = await SquadApplication.findOneAndUpdate(
+          { _id: applicationId, squad: id, status: ApplicationStatus.PENDING },
+          { $set: { status: ApplicationStatus.REJECTED,
+            responseMessage: typeof responseMessage === "string" ? responseMessage.slice(0, 500) : "",
+            respondedBy: userId, respondedAt: new Date() } }, { new: true }
+        );
+        if (!rejected) return reply.status(409).send({ success: false, message: "Application already handled" });
+        return reply.send({ success: true, message: "Application rejected" });
       }
     } catch (error) {
+      if (error instanceof SquadMembershipError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
       console.error("Respond to application error:", error);
       return reply.status(500).send({
         success: false,
@@ -1015,88 +1005,23 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
     }
   });
 
-  // Join squad (for open squads)
+  // Open join: the capacity predicate, join policy and membership all live
+  // in the same atomic MongoDB update (safe under simultaneous requests).
   fastify.post("/:id/join", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const userId = (request as any).user?.id;
-
-      if (!userId) {
-        return reply.status(400).send({
-          success: false,
-          message: "User ID is required",
-        });
-      }
-
-      const squad = await Squad.findById(id);
-      if (!squad) {
-        return reply.status(404).send({
-          success: false,
-          message: "Squad not found",
-        });
-      }
-
-      if (!squad.isActive) {
-        return reply.status(400).send({
-          success: false,
-          message: "Squad is not active",
-        });
-      }
-
-      // Check join type
-      if (squad.joinType === SquadJoinType.INVITE_ONLY) {
-        return reply.status(400).send({
-          success: false,
-          message: "This squad only accepts invitations",
-        });
-      }
-
-      if (squad.joinType === SquadJoinType.OPEN_FOR_APPLY) {
-        return reply.status(400).send({
-          success: false,
-          message:
-            "This squad requires an application. Please use the apply endpoint.",
-        });
-      }
-
-      // Fix for squads with invalid maxMembers (should be 5-7)
-      // Also handle case where maxMembers is 3 (invalid)
-      const validMaxMembers = squad.maxMembers < 5 || squad.maxMembers === 3 ? 7 : squad.maxMembers;
-      
-      if (squad.members.length >= validMaxMembers) {
-        return reply.status(400).send({
-          success: false,
-          message: "Squad is full",
-        });
-      }
-
-      if (squad.members.some((member) => member.toString() === userId)) {
-        return reply.status(400).send({
-          success: false,
-          message: "User is already a member of this squad",
-        });
-      }
-
-      // Add user to squad
-      squad.members.push(userId);
-      await squad.save();
-
-      const populatedSquad = await Squad.findById(squad._id)
+      const memberId = (request as any).user?.id;
+      const squad = await addSquadMemberAtomically({ squadId: id, memberId, onlyOpen: true });
+      const result = await Squad.findById(squad._id)
         .populate("leader", "name avatar")
-        .populate("members", "name avatar")
-        .lean();
-
-      return reply.status(200).send({
-        success: true,
-        message: "Successfully joined squad",
-        squad: populatedSquad,
-      });
+        .populate("members", "name avatar").lean();
+      return reply.send({ success: true, message: "Successfully joined squad", squad: result });
     } catch (error) {
-      console.error("Join squad error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to join squad",
-      });
+      if (error instanceof SquadMembershipError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
+      request.log.error({ error }, "Open squad join failed");
+      return reply.status(500).send({ success: false, message: "Unable to join squad" });
     }
   });
 
@@ -1173,78 +1098,31 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
     }
   });
 
-  // Add member directly (leader only)
+  // Only squad leaders can add an existing user, with atomic capacity enforcement.
   fastify.post("/:id/members", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { newMemberId } = request.body as any;
-      const userId = (request as any).user?.id;
-
-      if (!newMemberId) {
-        return reply.status(400).send({
-          success: false,
-          message: "New member user ID is required",
-        });
+      const { newMemberId } = request.body as { newMemberId: string };
+      const leaderId = (request as any).user?.id;
+      if (!mongoose.isValidObjectId(newMemberId)) {
+        return reply.status(400).send({ success: false, message: "Invalid member ID" });
       }
-
-      const squad = await Squad.findById(id);
-      if (!squad) {
-        return reply
-          .status(404)
-          .send({ success: false, message: "Squad not found" });
+      if (!await User.exists({ _id: newMemberId })) {
+        return reply.status(404).send({ success: false, message: "User not found" });
       }
-
-      // Only leader can add members directly
-      if (squad.leader.toString() !== userId) {
-        return reply.status(403).send({
-          success: false,
-          message: "Only squad leader can add members",
-        });
-      }
-
-      // Fix for squads with invalid maxMembers (should be 5-7)
-      // Also handle case where maxMembers is 3 (invalid)
-      const validMaxMembers = squad.maxMembers < 5 || squad.maxMembers === 3 ? 7 : squad.maxMembers;
-      
-      if (squad.members.length >= validMaxMembers) {
-        return reply
-          .status(400)
-          .send({ success: false, message: "Squad is full" });
-      }
-
-      if (squad.members.some((member) => member.toString() === newMemberId)) {
-        return reply.status(400).send({
-          success: false,
-          message: "User is already a member of this squad",
-        });
-      }
-
-      // Verify user exists
-      const user = await User.findById(newMemberId).lean();
-      if (!user) {
-        return reply
-          .status(404)
-          .send({ success: false, message: "User not found" });
-      }
-
-      squad.members.push(newMemberId);
-      await squad.save();
-
-      const populatedSquad = await Squad.findById(squad._id)
-        .populate("leader", "name avatar")
-        .populate("members", "name avatar")
-        .lean();
-
-      return reply.status(200).send({
-        success: true,
-        message: "Member added to squad",
-        squad: populatedSquad,
+      const updated = await addSquadMemberAtomically({
+        squadId: id, memberId: newMemberId, leaderId,
       });
+      const squad = await Squad.findById(updated._id)
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar").lean();
+      return reply.send({ success: true, message: "Member added to squad", squad });
     } catch (error) {
-      console.error("Add member error:", error);
-      return reply
-        .status(500)
-        .send({ success: false, message: "Failed to add member" });
+      if (error instanceof SquadMembershipError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
+      request.log.error({ error }, "Squad member addition failed");
+      return reply.status(500).send({ success: false, message: "Unable to add member" });
     }
   });
 
