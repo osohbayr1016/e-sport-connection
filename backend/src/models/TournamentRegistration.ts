@@ -8,6 +8,9 @@ export interface ITournamentRegistration extends Document {
   registrationFee: number; // Amount paid (5000 MNT)
   paymentStatus: "pending" | "paid" | "failed" | "refunded";
   paymentDate?: Date;
+  paymentReference?: string; // Manually checked bank reference, not provider verification
+  paymentVerifiedBy?: mongoose.Types.ObjectId;
+  paymentVerifiedAt?: Date;
   paymentProof?: string; // URL to payment proof image
   registrationDate: Date;
   checkedInAt?: Date;
@@ -70,6 +73,9 @@ const tournamentRegistrationSchema = new Schema<ITournamentRegistration>(
     paymentDate: {
       type: Date,
     },
+    paymentReference: { type: String, trim: true, maxlength: 80 },
+    paymentVerifiedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    paymentVerifiedAt: { type: Date },
     paymentProof: {
       type: String,
     },
@@ -147,6 +153,7 @@ tournamentRegistrationSchema.index({ tournament: 1 });
 tournamentRegistrationSchema.index({ squad: 1 });
 tournamentRegistrationSchema.index({ squadLeader: 1 });
 tournamentRegistrationSchema.index({ paymentStatus: 1 });
+tournamentRegistrationSchema.index({ paymentReference: 1 }, { unique: true, sparse: true });
 tournamentRegistrationSchema.index({ isApproved: 1 });
 tournamentRegistrationSchema.index({ approvalStatus: 1 }); // Add index for approval status
 tournamentRegistrationSchema.index({ status: 1 });

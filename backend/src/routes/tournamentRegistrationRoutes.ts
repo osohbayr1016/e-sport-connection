@@ -7,6 +7,10 @@ import Tournament from "../models/Tournament";
 import Squad from "../models/Squad";
 import User from "../models/User";
 
+class TournamentReviewConflict extends Error {
+  constructor() { super("Registration changed during review"); }
+}
+
 const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
@@ -167,135 +171,112 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Update payment status (admin only)
+  // Manual verification records the external bank transaction reference.
+  // It is not proof from a signed bank webhook and must be reconciled offline.
   fastify.put("/:id/payment", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { paymentStatus } = request.body as any;
-
-      if (!["pending", "paid", "failed", "refunded"].includes(paymentStatus)) {
-        return reply.status(400).send({ success: false, message: "Invalid payment status" });
+      const { paymentStatus, paymentReference } = request.body as {
+        paymentStatus: string; paymentReference?: string;
+      };
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: "Invalid registration ID" });
       }
-
-      const registration = await TournamentRegistration.findById(id);
-      if (!registration) {
-        return reply.status(404).send({
-          success: false,
-          message: "Registration not found",
-        });
+      if (paymentStatus !== "paid" && paymentStatus !== "failed") {
+        return reply.status(400).send({ success: false, message: "Only a pending payment can be verified or failed" });
       }
-
-      registration.paymentStatus = paymentStatus;
-      if (paymentStatus === "paid") {
-        registration.paymentDate = new Date();
+      if (paymentStatus === "paid" &&
+          (typeof paymentReference !== "string" || !/^[A-Za-z0-9_-]{6,80}$/.test(paymentReference.trim()))) {
+        return reply.status(400).send({ success: false, message: "Verified bank reference (6–80 characters) is required" });
       }
-
-      await registration.save();
-
-      const updatedRegistration = await TournamentRegistration.findById(id)
-        .populate("tournament", "name game startDate")
-        .populate("squad", "name tag")
-        .populate("squadLeader", "name email")
-        .populate("squadMembers", "name email")
-        .lean();
-
-      return reply.status(200).send({
-        success: true,
-        message: "Payment status updated successfully",
-        registration: updatedRegistration,
-      });
-    } catch (error) {
-      console.error("Update payment status error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to update payment status",
-      });
+      const existing = await TournamentRegistration.findById(id);
+      if (!existing) return reply.status(404).send({ success: false, message: "Registration not found" });
+      const tournament = await Tournament.findById(existing.tournament);
+      if (!tournament || tournament.tournamentType !== "tax") {
+        return reply.status(409).send({ success: false, message: "Only paid tournament registration can be manually verified" });
+      }
+      const updated = await TournamentRegistration.findOneAndUpdate(
+        { _id: id, approvalStatus: "pending", paymentStatus: { $in: ["pending", "failed"] } },
+        { $set: paymentStatus === "paid" ? {
+          paymentStatus: "paid", paymentReference: paymentReference!.trim().toUpperCase(),
+          paymentVerifiedBy: (request as any).user.id, paymentVerifiedAt: new Date(),
+          paymentDate: new Date(),
+        } : { paymentStatus: "failed" } },
+        { new: true, runValidators: true }
+      );
+      if (!updated) return reply.status(409).send({ success: false, message: "Payment already settled or registration no longer pending" });
+      return reply.send({ success: true, message: "Payment state recorded", registration: updated });
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        return reply.status(409).send({ success: false, message: "This payment reference has already been used" });
+      }
+      request.log.error({ error }, "Payment verification failed");
+      return reply.status(500).send({ success: false, message: "Unable to record payment" });
     }
   });
 
-  // Approve registration (admin only)
+  // Registration approval cannot automatically create a PAID transaction.
   fastify.put("/:id/approve", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { action, reason } = request.body as any;
-
-      // Validate required fields
-      if (!action) {
-        return reply.status(400).send({
-          success: false,
-          message: "Action is required",
-        });
+      const { action, reason } = request.body as { action: "approve" | "reject"; reason?: string };
+      if (!mongoose.isValidObjectId(id) || !["approve", "reject"].includes(action)) {
+        return reply.status(400).send({ success: false, message: "Invalid registration or action" });
       }
-
-      if (!["approve", "reject"].includes(action)) {
-        return reply.status(400).send({
-          success: false,
-          message: "Action must be either 'approve' or 'reject'",
-        });
+      const existing = await TournamentRegistration.findById(id);
+      if (!existing) return reply.status(404).send({ success: false, message: "Registration not found" });
+      const tournament = await Tournament.findById(existing.tournament);
+      if (!tournament || tournament.tournamentType !== "tax") {
+        return reply.status(409).send({ success: false, message: "Only paid tournament registrations can be reviewed" });
       }
-
-      // Check if registration exists
-      const registration = await TournamentRegistration.findById(id);
-      if (!registration) {
-        return reply.status(404).send({
-          success: false,
-          message: "Registration not found",
-        });
+      if (!["upcoming", "registration_open", "registration_closed"].includes(tournament.status)) {
+        return reply.status(409).send({ success: false, message: "Tournament is no longer accepting approvals" });
       }
-
-      // Check if tournament is tax type
-      const tournament = await Tournament.findById(registration.tournament);
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-      
-      // Default to tax tournament type if not specified (for backward compatibility)
-      const tournamentType = tournament.tournamentType || "tax";
-      if (tournamentType !== "tax") {
-        return reply.status(400).send({
-          success: false,
-          message: "Only tax tournament registrations can be approved/rejected",
-        });
-      }
-
-      // Update registration based on action
       if (action === "approve") {
-        registration.isApproved = true;
-        registration.approvalStatus = "approved";
-        registration.approvedBy = (request as any).user?.id;
-        registration.approvedAt = new Date();
-        registration.paymentStatus = "paid";
-        registration.paymentDate = new Date();
-      } else if (action === "reject") {
-        registration.isApproved = false;
-        registration.approvalStatus = "rejected";
-        registration.rejectionReason = reason || "No reason provided";
+        const updated = await TournamentRegistration.findOneAndUpdate(
+          { _id: id, approvalStatus: "pending", paymentStatus: "paid",
+            paymentReference: { $exists: true, $ne: "" }, isApproved: false },
+          { $set: { approvalStatus: "approved", isApproved: true,
+            approvedBy: (request as any).user.id, approvedAt: new Date() } },
+          { new: true }
+        );
+        if (!updated) return reply.status(409).send({
+          success: false, message: "Verify the bank payment reference before approving registration",
+        });
+        return reply.send({ success: true, message: "Registration approved", registration: updated });
       }
-
-      await registration.save();
-
-      const updatedRegistration = await TournamentRegistration.findById(id)
-        .populate("tournament", "name game startDate tournamentType")
-        .populate("squad", "name tag")
-        .populate("squadLeader", "name email")
-        .populate("squadMembers", "name email")
-        .populate("approvedBy", "name email")
-        .lean();
-
-      return reply.status(200).send({
-        success: true,
-        message: `Registration ${action}d successfully`,
-        registration: updatedRegistration,
-      });
+      // Rejection releases the reserved slot, but cannot silently discard
+      // money that was already marked as received.
+      if (existing.paymentStatus === "paid") {
+        return reply.status(409).send({ success: false, message: "Refund the verified payment before rejecting this registration" });
+      }
+      const session = await mongoose.startSession();
+      try {
+        let result: typeof existing | undefined;
+        await session.withTransaction(async () => {
+          const updated = await TournamentRegistration.findOneAndUpdate(
+            { _id: id, approvalStatus: "pending", paymentStatus: { $in: ["pending", "failed"] } },
+            { $set: { isApproved: false, approvalStatus: "rejected",
+              rejectionReason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : "Rejected by organizer" } },
+            { new: true, session }
+          );
+          if (!updated) throw new TournamentReviewConflict();
+          const reduced = await Tournament.updateOne(
+            { _id: updated.tournament, status: { $in: ["upcoming", "registration_open", "registration_closed"] },
+              currentSquads: { $gt: 0 } },
+            { $inc: { currentSquads: -1 } }, { session }
+          );
+          if (reduced.modifiedCount !== 1) throw new TournamentReviewConflict();
+          result = updated;
+        });
+        return reply.send({ success: true, message: "Registration rejected and capacity released", registration: result });
+      } finally { await session.endSession(); }
     } catch (error) {
-      console.error("Admin approval error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to process approval",
-      });
+      if (error instanceof TournamentReviewConflict) {
+        return reply.status(409).send({ success: false, message: "Registration changed; refresh and retry" });
+      }
+      request.log.error({ error }, "Registration approval failed");
+      return reply.status(500).send({ success: false, message: "Unable to review registration" });
     }
   });
 
