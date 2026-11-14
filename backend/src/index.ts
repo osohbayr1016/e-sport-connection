@@ -4,20 +4,13 @@ import etag from "@fastify/etag";
 import cors from "@fastify/cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import { createServer } from "http";
 import SocketManager from "./config/socket";
 import { MatchDeadlineChecker } from "./services/matchDeadlineChecker";
 
 // Load environment variables
 dotenv.config();
 
-const fastify = Fastify({
-  logger: true,
-});
-
 const PORT = process.env.PORT || 8000;
-
-// Initialize Socket.IO (will be initialized after Fastify starts)
 const socketManager = new SocketManager();
 
 // Connect to MongoDB
@@ -32,9 +25,13 @@ const connectDB = async (): Promise<void> => {
     await mongoose.connect(mongoURI);
   } catch (error) {
     console.error("❌ MongoDB connection failed:", error);
-    process.exit(1);
+    throw error;
   }
 };
+
+// Importing this module does not connect to MongoDB or listen on a port.
+export async function buildApp() {
+  const fastify = Fastify({ logger: process.env.NODE_ENV !== "test" });
 
 // CORS configuration
 const allowedOrigins = [
@@ -114,7 +111,6 @@ fastify.get("/api/v1", async (request, reply) => {
 
 // Import and register route handlers
 async function registerRoutes() {
-  try {
     // Register rate limiting first
     const { setupRateLimiting } = await import("./config/rateLimit");
     await setupRateLimiting(fastify);
@@ -145,19 +141,9 @@ async function registerRoutes() {
     // Test routes
     const testRoutes = await import("./routes/testRoutes");
     fastify.register(testRoutes.default, { prefix: "/api/test" });
-    // Upload routes - Direct registration to avoid import issues
-    try {
-      const uploadRoutes = await import("./routes/uploadRoutes");
-      if (uploadRoutes.default) {
-        await fastify.register(uploadRoutes.default, { prefix: "/api/upload" });
-      } else {
-        console.error("❌ Upload routes default export is undefined");
-      }
-    } catch (error) {
-      console.error("❌ Error registering upload routes:", error);
-      // Continue without upload routes
-    }
-
+    // Upload registration is mandatory; a partial API is not healthy.
+    const uploadRoutes = await import("./routes/uploadRoutes");
+    fastify.register(uploadRoutes.default, { prefix: "/api/upload" });
     // Message routes
     const messageRoutes = await import("./routes/messageRoutes");
     fastify.register(messageRoutes.default, { prefix: "/api" });
@@ -229,21 +215,17 @@ async function registerRoutes() {
     // Admin routes
     const adminRoutes = await import("./routes/adminRoutes");
     fastify.register(adminRoutes.default, { prefix: "/api/admin" });
-  } catch (error) {
-    console.error("❌ Error registering routes:", error);
-    // Continue without routes for basic health check
-  }
 }
 
 // Error handling
 fastify.setErrorHandler((error, request, reply) => {
-  console.error("Error:", error);
-  reply.status(500).send({
-    error: "Internal Server Error",
-    message:
-      process.env.NODE_ENV === "production"
-        ? "Something went wrong"
-        : error.message,
+  const statusCode = error.statusCode && error.statusCode >= 400 && error.statusCode < 600
+    ? error.statusCode : 500;
+  if (statusCode >= 500) request.log.error(error);
+  reply.status(statusCode).send({
+    error: statusCode >= 500 ? "Internal Server Error" : error.name,
+    message: statusCode >= 500 && process.env.NODE_ENV === "production"
+      ? "Something went wrong" : error.message,
   });
 });
 
@@ -255,43 +237,30 @@ fastify.setNotFoundHandler((request, reply) => {
   });
 });
 
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  await fastify.close();
-  process.exit(0);
-});
+  await registerRoutes();
+  return fastify;
+}
 
-process.on("SIGINT", async () => {
-  await fastify.close();
-  process.exit(0);
-});
-
-// Start server
-const startServer = async () => {
+async function startServer() {
   try {
-    // Connect to database first
     await connectDB();
-    // Register routes
-    await registerRoutes();
-
-    // Listen on the specified port
-    await fastify.listen({
-      port: Number(PORT),
-      host: "0.0.0.0", // Important for Render deployment
-    });
-
-    // Initialize Socket.IO after Fastify starts
+    const fastify = await buildApp();
+    await fastify.listen({ port: Number(PORT), host: "0.0.0.0" });
     socketManager.initialize(fastify.server);
-
-    // Start Match Deadline Checker
     MatchDeadlineChecker.start();
-    console.log("✅ Match deadline checker started");
+    const shutdown = async () => {
+      await fastify.close();
+      await mongoose.disconnect();
+    };
+    process.once("SIGTERM", () => { void shutdown(); });
+    process.once("SIGINT", () => { void shutdown(); });
   } catch (error) {
-    console.error("❌ Failed to start server:", error);
-    console.error("Stack trace:", error.stack);
-    process.exit(1);
-    await mongoose.disconnect();
+    console.error("Failed to start server:", error);
+    await mongoose.disconnect().catch(() => undefined);
+    process.exitCode = 1;
   }
-};
+}
 
-startServer();
+if (require.main === module) {
+  void startServer();
+}
