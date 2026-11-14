@@ -1,3 +1,4 @@
+import { createTournamentRegistration, handleTournamentRegistrationError } from "../services/tournamentRegistrationService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
@@ -358,120 +359,33 @@ const tournamentRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Register squad for tournament
+  // Legacy free tournament registration shares the transactional core.
   fastify.post("/:id/register", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { squadId, entryFee, currency } = request.body as any;
-
-      // Check if tournament exists
-      const tournament = await Tournament.findById(id);
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-
-      // Legacy quick-registration must never bypass payment verification.
-      if (tournament.tournamentType !== "free" || (tournament.entryFee || 0) > 0) {
-        return reply.status(400).send({
-          success: false,
-          message: "Use tournament-registrations/register for paid tournaments",
-        });
-      }
-      if (!["upcoming", "registration_open"].includes(tournament.status)) {
-        return reply.status(409).send({ success: false, message: "Registration closed" });
-      }
-      // Check if tournament is full
-      if (tournament.currentSquads >= tournament.maxSquads) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament is full",
-        });
-      }
-
-      // Check if squad is already registered
-      const existingRegistration = await TournamentRegistration.findOne({
-        tournament: id,
-        squad: squadId,
+      const { squadId } = request.body as { squadId: string };
+      const result = await createTournamentRegistration({
+        tournamentId: id, squadId, actorId: (request as any).user?.id, requireFree: true,
       });
-
-      if (existingRegistration) {
-        return reply.status(400).send({
-          success: false,
-          message: "Squad is already registered for this tournament",
-        });
-      }
-
-      // Get squad details to populate leader and members
-      const Squad = (await import("../models/Squad")).default;
-      const squad = await Squad.findById(squadId);
-      if (!squad) {
-        return reply.status(404).send({
-          success: false,
-          message: "Squad not found",
-        });
-      }
-
-      if (squad.leader.toString() !== (request as any).user?.id) {
-        return reply.status(403).send({ success: false, message: "Only the squad leader can register" });
-      }
-      // Create tournament registration
-      const registration = new TournamentRegistration({
-        tournament: id,
-        squad: squadId,
-        squadLeader: squad.leader,
-        squadMembers: squad.members,
-        registrationFee: 0,
-        paymentStatus: "paid", // Assuming payment is already processed
-        paymentDate: new Date(),
-        status: "registered",
-        isApproved: true, // Auto-approve for now
-      });
-
-      await registration.save();
-
-      // Update tournament current squads count
-      await Tournament.findByIdAndUpdate(id, {
-        $inc: { currentSquads: 1 },
-      });
-
-      // Trigger achievement check for tournament participation
+      // Achievement side effects should never invalidate an already committed registration.
       try {
         const { AchievementService } = await import("../services/achievementService");
-        
-        // Get squad members
-        const squad = await Squad.findById(squadId);
-        if (squad && squad.members) {
-          // Trigger achievement for each squad member
-          for (const member of squad.members) {
-            await AchievementService.processAchievementTrigger({
-              userId: member,
-              type: "tournament_participation",
-              data: {
-                game: tournament.game,
-                tournamentId: tournament._id as mongoose.Types.ObjectId,
-              },
-            });
-          }
+        for (const member of result.squad.members) {
+          await AchievementService.processAchievementTrigger({
+            userId: member,
+            type: "tournament_participation",
+            data: { game: result.tournament.game, tournamentId: result.tournament._id as mongoose.Types.ObjectId },
+          });
         }
-      } catch (achievementError) {
-        console.error("Error processing achievement triggers:", achievementError);
-        // Don't fail the registration if achievement processing fails
+      } catch (error) {
+        request.log.error({ error }, "Registration achievement delivery failed");
       }
-
       return reply.status(200).send({
-        success: true,
-        message: "Successfully registered for tournament",
-        registration,
+        success: true, message: "Successfully registered for tournament",
+        registration: result.registration,
       });
     } catch (error) {
-      console.error("Tournament registration error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to register for tournament",
-      });
+      return handleTournamentRegistrationError(error, reply);
     }
   });
 
