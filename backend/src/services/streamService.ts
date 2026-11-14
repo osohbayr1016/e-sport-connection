@@ -172,12 +172,11 @@ export class StreamService {
     }
 
     // Check if viewer already exists
+    // A session ID represents one browser tab/device. Do not reuse an active
+    // record for another socket just because the logged-in user is the same.
     const existingViewer = await StreamViewer.findOne({
       streamSessionId: streamId,
-      $or: [
-        ...(userId ? [{ userId }] : []),
-        ...(sessionId ? [{ sessionId }] : []),
-      ],
+      ...(sessionId ? { sessionId } : { userId }),
       isActive: true,
     });
 
@@ -206,10 +205,7 @@ export class StreamService {
   static async removeViewer(streamId: string, userId?: string, sessionId?: string): Promise<void> {
     const viewer = await StreamViewer.findOne({
       streamSessionId: streamId,
-      $or: [
-        ...(userId ? [{ userId }] : []),
-        ...(sessionId ? [{ sessionId }] : []),
-      ],
+      ...(sessionId ? { sessionId } : { userId }),
       isActive: true,
     });
 

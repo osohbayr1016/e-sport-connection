@@ -108,6 +108,46 @@ describe("concurrent tournament and financial writes", () => {
     expect((await approve()).statusCode).toBe(409);
     expect((await Squad.findById(squad._id))!.currentBountyCoins).toBe(50);
   });
+  test("paid withdrawals require bank settlement evidence and cannot be marked twice", async () => {
+    const leader = await account("settlementleader");
+    const admin = await account("settlementadmin", "ADMIN");
+    const squad = await squadFor(leader, "SET1", 100);
+    const request = await app.inject({
+      method: "POST", url: "/api/bounty-coins/withdraw",
+      headers: { authorization: "Bearer " + tokenFor(leader) },
+      payload: { squadId: squad.id, amountCoins: 50, bankName: "Test Bank", iban: "MN12345678901" },
+    });
+    expect(request.statusCode).toBe(200);
+    const wrId = request.json().data._id;
+    const decision = await app.inject({
+      method: "POST", url: "/api/bounty-coins/withdraw/" + wrId + "/decision",
+      headers: { authorization: "Bearer " + tokenFor(admin) },
+      payload: { decision: "APPROVE" },
+    });
+    expect(decision.statusCode).toBe(200);
+    const url = "/api/bounty-coins/withdraw/" + wrId + "/mark-paid";
+    const withoutReference = await app.inject({
+      method: "POST", url,
+      headers: { authorization: "Bearer " + tokenFor(admin) },
+      payload: {},
+    });
+    expect(withoutReference.statusCode).toBe(400);
+    expect((await WithdrawRequest.findById(wrId))?.status).toBe("APPROVED");
+    const paid = await app.inject({
+      method: "POST", url,
+      headers: { authorization: "Bearer " + tokenFor(admin) },
+      payload: { bankTransferReference: "BANKREF123456" },
+    });
+    expect(paid.statusCode).toBe(200);
+    expect((await WithdrawRequest.findById(wrId))?.bankTransferReference).toBe("BANKREF123456");
+    const duplicate = await app.inject({
+      method: "POST", url,
+      headers: { authorization: "Bearer " + tokenFor(admin) },
+      payload: { bankTransferReference: "BANKREF123456" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+  });
+
   test("check-in is leader-only, limited to the event window and idempotent", async () => {
     const leader = await account("checkinleader");
     const stranger = await account("checkinoutsider");

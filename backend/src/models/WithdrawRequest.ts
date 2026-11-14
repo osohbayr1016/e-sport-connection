@@ -15,6 +15,7 @@ export interface IWithdrawRequest extends Document {
   processedAt?: Date;
   paidBy?: Schema.Types.ObjectId; // admin who marked as paid
   paidAt?: Date;
+  bankTransferReference?: string; // Traceable manual settlement reference; not bank verification
   createdAt: Date;
   updatedAt: Date;
 }
@@ -79,6 +80,11 @@ const withdrawRequestSchema = new Schema<IWithdrawRequest>(
     },
     paidAt: {
       type: Date,
+    },
+    bankTransferReference: {
+      type: String,
+      trim: true,
+      maxlength: 80,
     },
   },
   { timestamps: true }

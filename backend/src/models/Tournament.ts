@@ -12,6 +12,7 @@ export interface ITournament extends Document {
     secondPlace: number;
     thirdPlace: number;
   };
+  bracketRevision: number; // Serializes tournament progression across workers
   maxSquads: number; // Maximum number of squads allowed
   currentSquads: number; // Current number of registered squads
   status:
@@ -84,6 +85,7 @@ const tournamentSchema = new Schema<ITournament>(
         min: 0,
       },
     },
+    bracketRevision: { type: Number, default: 0, min: 0 },
     maxSquads: {
       type: Number,
       required: true,

@@ -21,6 +21,7 @@ interface WithdrawRequest {
   processedAt?: string;
   paidBy?: { _id: string; name: string; email: string } | string;
   paidAt?: string;
+  bankTransferReference?: string;
   createdAt: string;
 }
 
@@ -35,6 +36,7 @@ export default function WithdrawRequestsPage() {
     null
   );
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
+  const [transferReferences, setTransferReferences] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!authLoading && user) fetchData();
@@ -83,11 +85,12 @@ export default function WithdrawRequestsPage() {
   };
 
   const markAsPaid = async (id: string) => {
-    if (
-      !window.confirm(
-        "Mark this withdrawal as paid? This confirms payment has been sent to the squad."
-      )
-    ) {
+    const bankTransferReference = (transferReferences[id] || "").trim();
+    if (!/^[A-Za-z0-9_-]{6,80}$/.test(bankTransferReference)) {
+      alert("Enter the bank's transfer reference (6–80 letters, numbers, _ or -).");
+      return;
+    }
+    if (!window.confirm("Confirm that bank settlement was independently verified before marking paid?")) {
       return;
     }
     try {
@@ -101,11 +104,13 @@ export default function WithdrawRequestsPage() {
             "Content-Type": "application/json",
             ...(token && { Authorization: `Bearer ${token}` }),
           },
+          body: JSON.stringify({ bankTransferReference }),
         }
       );
       if (res.ok) {
         await fetchData();
-        alert("Successfully marked as paid!");
+        setTransferReferences(current => ({ ...current, [id]: "" }));
+        alert("Withdrawal marked paid with settlement reference recorded.");
       } else {
         const data = await res.json();
         alert(`Failed: ${data.message || "Unknown error"}`);
@@ -245,17 +250,33 @@ export default function WithdrawRequestsPage() {
                         </>
                       )}
                       {r.status === "APPROVED" && (
-                        <button
-                          disabled={!!markingPaidId}
-                          onClick={() => markAsPaid(r._id)}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
-                        >
-                          <Check className="w-4 h-4" /> Mark as Paid
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor={`bank-reference-${r._id}`} className="text-xs text-slate-300">
+                            Verified bank transfer reference
+                          </label>
+                          <input
+                            id={`bank-reference-${r._id}`}
+                            value={transferReferences[r._id] || ""}
+                            onChange={event => setTransferReferences(current => ({ ...current, [r._id]: event.target.value }))}
+                            maxLength={80}
+                            placeholder="Bank transaction ID"
+                            autoComplete="off"
+                            className="rounded-lg border border-white/20 bg-slate-900 px-3 py-2 text-white"
+                          />
+                          <button
+                            type="button"
+                            disabled={!!markingPaidId || !/^[A-Za-z0-9_-]{6,80}$/.test((transferReferences[r._id] || "").trim())}
+                            onClick={() => markAsPaid(r._id)}
+                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                          >
+                            <Check className="w-4 h-4" /> Mark as Paid
+                          </button>
+                        </div>
                       )}
                       {r.status === "PAID" && (
                         <span className="px-3 py-2 rounded-lg text-sm font-medium bg-green-900/30 text-green-400 border border-green-700/30 flex items-center gap-1">
                           <Check className="w-4 h-4" /> PAID
+                          {r.bankTransferReference && <span className="ml-1 text-xs">{r.bankTransferReference}</span>}
                         </span>
                       )}
                       {r.status === "REJECTED" && (

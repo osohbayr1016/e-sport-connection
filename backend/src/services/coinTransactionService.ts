@@ -94,11 +94,14 @@ export async function decideCoinWithdrawal(actor: string, id: string, decision: 
   });
 }
 
-export async function markCoinWithdrawalPaid(actor: string, id: string) {
+export async function markCoinWithdrawalPaid(actor: string, id: string, reference?: string) {
   if (!validId(actor) || !validId(id)) fail(400, "Invalid request");
+  if (typeof reference !== "string" || !/^[A-Za-z0-9_-]{6,80}$/.test(reference.trim())) {
+    fail(400, "A valid bank transfer reference (6–80 characters) is required");
+  }
   const wr = await WithdrawRequest.findOneAndUpdate(
-    { _id: id, status: "APPROVED" },
-    { $set: { status: "PAID", paidBy: actor, paidAt: new Date() } },
+    { _id: id, status: "APPROVED", bankTransferReference: { $exists: false } },
+    { $set: { status: "PAID", paidBy: actor, paidAt: new Date(), bankTransferReference: reference.trim() } },
     { new: true }
   );
   if (!wr) fail(409, "Only approved unpaid withdrawals can be marked paid");

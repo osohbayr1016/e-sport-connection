@@ -13,10 +13,11 @@ test("admin achievement routes authenticate and authorize all requests", () => {
   assert.ok(hookBased || routeBased, "Every admin achievement handler must be protected");
 });
 
-test("credit mutations require admin and valid non-negative credit", () => {
+test("unsafe direct ledger editing is retired", () => {
   const code = source("bountyCoinRoutes.ts");
   assert.ok(code.includes('fastify.post("/transaction", { preHandler: [authenticateToken, requireAdmin] }'));
-  assert.ok(code.includes("Number.isFinite(amount)"));
+  assert.ok(code.includes('"Direct ledger adjustments are disabled. Use an audited financial workflow."'));
+  assert.ok(!code.includes("bountyCoinData.balance += amount"));
 });
 
 test("privileged tournament routes require verified admin", () => {

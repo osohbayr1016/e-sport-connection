@@ -174,69 +174,13 @@ const bountyCoinRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Add transaction to user's bounty coin history
-  fastify.post("/transaction", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
-    try {
-      const { userId, type, amount, description } = request.body as {
-        userId: string;
-        type: "earn" | "spend" | "purchase" | "withdraw";
-        amount: number;
-        description: string;
-      };
-
-      if (!mongoose.Types.ObjectId.isValid(userId) ||
-          !["earn", "spend", "purchase", "withdraw"].includes(type) ||
-          !Number.isFinite(amount) || amount <= 0 || amount > 100000000) {
-        return reply.status(400).send({ success: false, message: "Invalid transaction" });
-      }
-      let bountyCoinData = await BountyCoin.findOne({ userId });
-
-      if (!bountyCoinData) {
-        // Create new bounty coin data if it doesn't exist
-        bountyCoinData = new BountyCoin({
-          userId,
-          balance: 0,
-          totalEarned: 0,
-          totalSpent: 0,
-          transactions: [],
-        });
-      }
-
-      // Add transaction
-      const transaction = {
-        type,
-        amount,
-        description,
-        timestamp: new Date(),
-      };
-
-      bountyCoinData.transactions.push(transaction);
-
-      // Update balance and totals
-      if (type === "earn" || type === "purchase") {
-        bountyCoinData.balance += amount;
-        bountyCoinData.totalEarned += amount;
-      } else if (type === "spend" || type === "withdraw") {
-        bountyCoinData.balance = Math.max(0, bountyCoinData.balance - amount);
-        bountyCoinData.totalSpent += amount;
-      }
-
-      await bountyCoinData.save();
-
-      return reply.send({
-        success: true,
-        data: {
-          newBalance: bountyCoinData.balance,
-          transaction,
-        },
-      });
-    } catch (error) {
-      console.error("Error adding bounty coin transaction:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Internal server error",
-      });
-    }
+  // The embedded user-ledger adjustment endpoint bypassed the authoritative
+  // squad wallet and could create inconsistent credits. Retire it.
+  fastify.post("/transaction", { preHandler: [authenticateToken, requireAdmin] }, async (_request, reply) => {
+    return reply.status(410).send({
+      success: false,
+      message: "Direct ledger adjustments are disabled. Use an audited financial workflow.",
+    });
   });
 
   // All withdrawals are atomic and validate authenticated squad ownership.
@@ -297,7 +241,8 @@ const bountyCoinRoutes: FastifyPluginAsync = async (
 
   fastify.post("/withdraw/:id/mark-paid", { preHandler: [authenticateToken, requireAdmin] }, async (request: any, reply) => {
     try {
-      const wr = await markCoinWithdrawalPaid(request.user?.id, request.params.id);
+      const { bankTransferReference } = request.body as { bankTransferReference?: string };
+      const wr = await markCoinWithdrawalPaid(request.user?.id, request.params.id, bankTransferReference);
       return reply.send({ success: true, data: wr, message: "Withdrawal marked paid" });
     } catch (error) { return handleFinanceError(error, reply); }
   });

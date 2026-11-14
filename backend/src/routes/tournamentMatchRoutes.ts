@@ -1,3 +1,5 @@
+import { advanceCompletedTournamentRound } from "../services/tournamentMatchService";
+import { finalizeMatchWithRewards, MatchResultError } from "../services/tournamentResultService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
@@ -90,6 +92,19 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
     }
   });
 
+  // Operators can retry progression after an intermittent dependency failure.
+  fastify.post("/advance/:tournamentId/:round", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
+    try {
+      const { tournamentId, round } = request.params as { tournamentId: string; round: string };
+      const result = await advanceCompletedTournamentRound(tournamentId, Number(round));
+      if (result === "not_ready") return reply.status(409).send({ success: false, message: "Round is not finished" });
+      return reply.send({ success: true, status: result });
+    } catch (error) {
+      request.log.error({ error }, "Admin advancement retry failed");
+      return reply.status(500).send({ success: false, message: "Round advancement failed" });
+    }
+  });
+
   // Get all matches for a tournament
   fastify.get("/tournament/:tournamentId", async (request, reply) => {
     try {
@@ -148,65 +163,9 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
         });
       }
 
-      const match = await TournamentMatch.findById(matchId);
-      if (!match) {
-        return reply.status(404).send({
-          success: false,
-          message: "Match not found",
-        });
-      }
-
-      if (match.status === "completed") {
-        return reply.status(400).send({
-          success: false,
-          message: "Match already completed",
-        });
-      }
-
-      // Validate winner and loser
-      if (
-        winnerId !== match.squad1.toString() &&
-        winnerId !== match.squad2.toString()
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Winner must be one of the participating squads",
-        });
-      }
-
-      if (
-        loserId !== match.squad1.toString() &&
-        loserId !== match.squad2.toString()
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Loser must be one of the participating squads",
-        });
-      }
-
-      if (winnerId === loserId) {
-        return reply.status(400).send({
-          success: false,
-          message: "Winner and loser cannot be the same",
-        });
-      }
-
-      // Update match
-      match.winner = winnerId;
-      match.loser = loserId;
-      match.status = "completed";
-      match.endTime = new Date();
-      match.score = score;
-      match.adminNotes = adminNotes;
-      if (typeof applyLoserDeduction === "boolean") {
-        (match as any).applyLoserDeduction = applyLoserDeduction;
-      }
-
-      // Save match first so service can read the updated winner/loser
-      await match.save();
-
-      // Process bounty coins and division changes
-      await DivisionService.processMatchResult(matchId);
+      const match = await finalizeMatchWithRewards(matchId, {
+        winnerId, loserId, score, adminNotes, applyLoserDeduction,
+      });
 
       // Trigger achievement checks for match completion
       try {
@@ -253,75 +212,13 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
         // Don't fail the match completion if achievement processing fails
       }
 
-      // If the whole round is completed, auto-generate next round (Single Elimination)
+      // Advance only supported formats, serialized in a separate transaction.
+      // If progression fails, the committed result stays valid and the admin
+      // recovery endpoint can safely retry without duplicating any matches.
       try {
-        const currentRound = match.round;
-        const currentTournamentId = match.tournament.toString();
-
-        const roundMatches = await TournamentMatch.find({
-          tournament: currentTournamentId,
-          round: currentRound,
-        })
-          .sort({ matchNumber: 1 })
-          .lean();
-
-        const allCompleted = roundMatches.every(
-          (m) => m.status === "completed"
-        );
-        if (allCompleted) {
-          const winners = roundMatches
-            .map((m) => m.winner)
-            .filter((w): w is any => !!w);
-
-          if (winners.length >= 2) {
-            // Prepare next round matches by pairing winners in order
-            const nextRound = currentRound + 1;
-
-            const lastMatch = await TournamentMatch.find({
-              tournament: currentTournamentId,
-            })
-              .sort({ matchNumber: -1 })
-              .limit(1);
-            let nextMatchNumber = lastMatch[0]?.matchNumber
-              ? lastMatch[0].matchNumber + 1
-              : 1;
-
-            const newMatches: any[] = [];
-            for (let i = 0; i < winners.length; i += 2) {
-              if (winners[i] && winners[i + 1]) {
-                newMatches.push({
-                  tournament: match.tournament,
-                  matchNumber: nextMatchNumber++,
-                  round: nextRound,
-                  squad1: winners[i],
-                  squad2: winners[i + 1],
-                  status: "scheduled",
-                  scheduledTime: new Date(),
-                  bountyCoinAmount: 50,
-                  matchType: "normal",
-                });
-              }
-            }
-
-            if (newMatches.length > 0) {
-              await TournamentMatch.insertMany(newMatches);
-            } else if (winners.length === 1) {
-              // Edge case: only one winner remains
-              await Tournament.findByIdAndUpdate(currentTournamentId, {
-                status: "completed",
-                endDate: new Date(),
-              });
-            }
-          } else if (winners.length === 1) {
-            // Tournament finished
-            await Tournament.findByIdAndUpdate(currentTournamentId, {
-              status: "completed",
-              endDate: new Date(),
-            });
-          }
-        }
-      } catch (e) {
-        console.error("Auto-advance round error:", e);
+        await advanceCompletedTournamentRound(match.tournament.toString(), match.round);
+      } catch (error) {
+        request.log.error({ error, tournament: match.tournament }, "Tournament advancement requires retry");
       }
 
       // Return the updated match
@@ -337,6 +234,9 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
         match: updatedMatch,
       });
     } catch (error) {
+      if (error instanceof MatchResultError) {
+        return reply.status(error.statusCode).send({ success: false, message: error.message });
+      }
       console.error("Error updating match result:", error);
       return reply.status(500).send({
         success: false,

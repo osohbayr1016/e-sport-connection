@@ -18,11 +18,9 @@ export class DivisionService {
   /**
    * Process match result and update squad divisions and bounty coins
    */
-  static async processMatchResult(matchId: string): Promise<void> {
+  static async processMatchResult(matchId: string, providedSession?: ClientSession): Promise<void> {
     if (!mongoose.isValidObjectId(matchId)) throw new Error("Invalid match ID");
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
+    const apply = async (session: ClientSession): Promise<void> => {
         // A second concurrent processor must either see the completed flag or
         // conflict and retry. Awarding coins and setting the flag are atomic.
         const match = await TournamentMatch.findById(matchId).session(session);
@@ -63,7 +61,15 @@ export class DivisionService {
         match.divisionChangesProcessed = true;
         match.bountyCoinsDistributed = true;
         await match.save({ session });
-      });
+
+    };
+    if (providedSession) {
+      await apply(providedSession);
+      return;
+    }
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => apply(session));
     } finally {
       await session.endSession();
     }
@@ -225,33 +231,9 @@ export class DivisionService {
     };
   }
 
-  /**
-   * Purchase bounty coins
-   */
-  static async purchaseBountyCoins(
-    squadId: string,
-    amount: number
-  ): Promise<{ success: boolean; message: string; newBalance: number }> {
-    const squad = await Squad.findById(squadId);
-    if (!squad) {
-      throw new Error("Squad not found");
-    }
-
-    const divisionConfig = DIVISION_CONFIG[squad.division];
-    const costPer50 = divisionConfig.bountyCoinPrice;
-    const totalCost = (amount / 50) * costPer50;
-
-    // Here you would integrate with payment system
-    // For now, we'll just update the bounty coins
-    squad.currentBountyCoins += amount;
-    squad.totalBountyCoinsEarned += amount;
-
-    await squad.save();
-
-    return {
-      success: true,
-      message: `Successfully purchased ${amount} bounty coins for ${totalCost} MNT`,
-      newBalance: squad.currentBountyCoins,
-    };
+  /** Unsafe legacy direct minting is intentionally unavailable. */
+  static async purchaseBountyCoins(_squadId: string, _amount: number): Promise<never> {
+    throw new Error("Direct coin minting is disabled: verify a purchase in the audited finance workflow");
   }
+
 }
