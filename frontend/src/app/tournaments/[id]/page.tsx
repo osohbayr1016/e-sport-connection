@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useParams } from "next/navigation";
 import { useAuth } from "../../contexts/AuthContext";
+import { selectTournamentSquad } from "../../../utils/tournamentEligibility";
 import Navigation from "../../components/Navigation";
 import { API_ENDPOINTS } from "../../../config/api";
 import PaymentProofUploader from "../../../components/PaymentProofUploader";
@@ -61,7 +62,7 @@ interface Tournament {
 
 export default function TournamentDetailPage() {
   const params = useParams();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -238,7 +239,7 @@ export default function TournamentDetailPage() {
 
   const canRegister = (status: Tournament["status"], deadline: string) => {
     // Registration remains open until the tournament is started by admin
-    return status !== "ongoing" && status !== "completed";
+    return status === "registration_open" || status === "upcoming";
   };
 
   const isDeadlinePassed = (deadline: string) => {
@@ -252,50 +253,25 @@ export default function TournamentDetailPage() {
     setRegistrationMessage("");
 
     try {
-      // Step 1: Check if user has authentication
-      if (!user) {
-        setRegistrationMessage("Та нэвтрэх шаардлагатай байна.");
+      // Authenticate the registration and choose a team the user actually leads.
+      const token = getToken();
+      if (!user || !token) {
+        setRegistrationMessage("Бүртгүүлэхийн тулд нэвтэрнэ үү.");
         return;
       }
-
-      // Step 2: Check if user has a squad for this game
-      const userSquadsResponse = await fetch(`/api/squads/user/${user.id}`);
+      const userSquadsResponse = await fetch(`/api/squads/user/${user.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const userSquadsData = await userSquadsResponse.json();
-
-      if (!userSquadsData.success || userSquadsData.squads.length === 0) {
-        setRegistrationMessage(
-          "Та энэ тоглоомд squad үүсгэх шаардлагатай байна. Squad хуудсанд очоод squad үүсгэнэ үү."
-        );
+      if (!userSquadsResponse.ok || !userSquadsData.success || !Array.isArray(userSquadsData.squads)) {
+        setRegistrationMessage(userSquadsData.message || "Багийн мэдээллийг авах боломжгүй байна.");
         return;
       }
-
-      // Filter squads by game and find the first one
-      // For testing purposes, accept any squad if the user has one
-      const userSquadsForGame = userSquadsData.squads;
-
-      // If you want to be more strict, uncomment this:
-      // const normalizeGameName = (gameName: string) => {
-      //   return gameName.replace(": Bang Bang", "").trim();
-      // };
-      // userSquadsForGame = userSquadsData.squads.filter(
-      //   (squad: any) => normalizeGameName(squad.game) === normalizeGameName(tournament.game)
-      // );
-
-      if (userSquadsForGame.length === 0) {
-        setRegistrationMessage(
-          `Та энэ тоглоомд squad үүсгэх шаардлагатай байна. Squad хуудсанд очоод squad үүсгэнэ үү.`
-        );
-        return;
-      }
-
-      const userSquad = userSquadsForGame[0]; // Get first squad for this game
-
-      // Step 3: Check if squad meets requirements (5-7 members)
-      const squadMemberCount = userSquad.members.length + 1; // +1 for leader
-      if (squadMemberCount < 5 || squadMemberCount > 7) {
-        setRegistrationMessage(
-          `Squad-д ${squadMemberCount} гишүүн байна. Тэмцээнд оролцохын тулд 5-7 гишүүнтэй байх шаардлагатай.`
-        );
+      const { squad: userSquad, reason } = selectTournamentSquad(
+        userSquadsData.squads, user.id, tournament.game,
+      );
+      if (!userSquad) {
+        setRegistrationMessage(reason);
         return;
       }
 
@@ -322,9 +298,6 @@ export default function TournamentDetailPage() {
         setRegistrationMessage("Үнэгүй тэмцээн. Бүртгэл хийж байна...");
       }
 
-      // Simulate processing delay
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
       // Step 6: Register the squad for the tournament
       const registrationResponse = await fetch(
         API_ENDPOINTS.TOURNAMENT_REGISTRATIONS.CREATE,
@@ -332,6 +305,7 @@ export default function TournamentDetailPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             tournamentId: tournament._id,
@@ -345,11 +319,10 @@ export default function TournamentDetailPage() {
         }
       );
 
-      if (!registrationResponse.ok) {
-        throw new Error("Registration failed");
-      }
-
       const registrationData = await registrationResponse.json();
+      if (!registrationResponse.ok) {
+        throw new Error(registrationData.message || "Тэмцээнд бүртгүүлэх боломжгүй байна.");
+      }
 
       if (registrationData.success) {
         setRegistrationMessage(
