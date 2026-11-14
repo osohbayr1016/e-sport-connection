@@ -48,7 +48,7 @@ export const login = async (
     }
 
     // Find user by email
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email }).select("+password +tokenVersion");
     if (!user) {
       return reply.status(401).send({
         success: false,

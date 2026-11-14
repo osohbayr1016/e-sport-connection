@@ -16,5 +16,5 @@ test("squad operations authenticate users and reject client-selected identity an
 test("socket never converts invalid tokens into anonymous authenticated connections",()=>{
  const src=code("backend/src/config/socket.ts");
  assert.ok(src.includes('next(new Error("Invalid or expired authentication token"))'));
- assert.ok(src.includes('if (!user) return next(new Error("Invalid authentication session"))'));
+ assert.ok(src.includes('if (!user || (decoded.ver ?? 0) !== (user.tokenVersion ?? 0))'));
 });
