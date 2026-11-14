@@ -211,9 +211,15 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Create squad
-  fastify.post("/", async (request, reply) => {
+  fastify.post("/", { preHandler: authenticateToken }, async (request, reply) => {
     try {
-      const squadData = request.body as any;
+      const actorId = (request as any).user?.id;
+      const payload = request.body as Record<string, unknown>;
+      const squadData: Record<string, any> = {};
+      for (const field of ["name", "tag", "game", "maxMembers", "description", "logo", "joinType"]) {
+        if (Object.prototype.hasOwnProperty.call(payload, field)) squadData[field] = payload[field];
+      }
+      squadData.leader = actorId;
 
       // Validate required fields
       const requiredFields = ["name", "tag", "leader", "game", "maxMembers"];
@@ -301,11 +307,16 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Update squad (leader only)
-  fastify.put("/:id", async (request, reply) => {
+  fastify.put("/:id", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const updateData = request.body as any;
-      const { userId } = request.body as any; // Current user ID
+      const payload = request.body as Record<string, unknown>;
+      const updateData: Record<string, unknown> = {};
+      for (const field of ["name", "tag", "description", "logo", "maxMembers"]) {
+        if (Object.prototype.hasOwnProperty.call(payload, field)) updateData[field] = payload[field];
+      }
+      if (Object.keys(updateData).length === 0) return reply.status(400).send({ success: false, message: "No editable fields supplied" });
+      const userId = (request as any).user?.id; // Current user ID
 
       const squad = await Squad.findById(id);
 
@@ -367,10 +378,11 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Update squad join settings (leader only)
-  fastify.put("/:id/join-settings", async (request, reply) => {
+  fastify.put("/:id/join-settings", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { joinType, userId } = request.body as any;
+      const { joinType } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!joinType || !Object.values(SquadJoinType).includes(joinType)) {
         return reply.status(400).send({
@@ -416,10 +428,11 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Invite player to squad (leader only)
-  fastify.post("/:id/invite", async (request, reply) => {
+  fastify.post("/:id/invite", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { invitedUserId, message, userId } = request.body as any;
+      const { invitedUserId, message } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!invitedUserId) {
         return reply.status(400).send({
@@ -509,10 +522,11 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Respond to invitation (invited user)
-  fastify.post("/:id/respond-invitation", async (request, reply) => {
+  fastify.post("/:id/respond-invitation", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { invitationId, response, userId } = request.body as any;
+      const { invitationId, response } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!invitationId || !response) {
         return reply.status(400).send({
@@ -742,11 +756,11 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Respond to application (squad leader)
-  fastify.post("/:id/respond-application", async (request, reply) => {
+  fastify.post("/:id/respond-application", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { applicationId, response, responseMessage, userId } =
-        request.body as any;
+      const { applicationId, response, responseMessage } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!applicationId || !response) {
         return reply.status(400).send({
@@ -844,10 +858,10 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Get squad invitations (for squad leader)
-  fastify.get("/:id/invitations", async (request, reply) => {
+  fastify.get("/:id/invitations", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { userId } = request.query as any;
+      const userId = (request as any).user?.id;
 
       const squad = await Squad.findById(id);
       if (!squad) {
@@ -940,9 +954,10 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Get user's invitations
-  fastify.get("/user/:userId/invitations", async (request, reply) => {
+  fastify.get("/user/:userId/invitations", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
+      if (userId !== (request as any).user?.id) return reply.status(403).send({ success: false, message: "Access denied" });
 
       const invitations = await SquadInvitation.find({
         invitedUser: userId,
@@ -1001,10 +1016,10 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Join squad (for open squads)
-  fastify.post("/:id/join", async (request, reply) => {
+  fastify.post("/:id/join", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { userId } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!userId) {
         return reply.status(400).send({
@@ -1086,10 +1101,10 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Leave squad
-  fastify.post("/:id/leave", async (request, reply) => {
+  fastify.post("/:id/leave", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { userId } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!userId) {
         return reply.status(400).send({
@@ -1159,10 +1174,11 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Add member directly (leader only)
-  fastify.post("/:id/members", async (request, reply) => {
+  fastify.post("/:id/members", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { newMemberId, userId } = request.body as any;
+      const { newMemberId } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!newMemberId) {
         return reply.status(400).send({
@@ -1233,13 +1249,13 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Remove member (leader only)
-  fastify.delete("/:id/members/:memberId", async (request, reply) => {
+  fastify.delete("/:id/members/:memberId", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id, memberId } = request.params as {
         id: string;
         memberId: string;
       };
-      const { userId } = request.body as any;
+      const userId = (request as any).user?.id;
 
       const squad = await Squad.findById(id);
       if (!squad) {
@@ -1304,10 +1320,11 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   });
 
   // Transfer leadership to another member (leader only)
-  fastify.put("/:id/leader", async (request, reply) => {
+  fastify.put("/:id/leader", { preHandler: authenticateToken }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { newLeaderId, userId } = request.body as any;
+      const { newLeaderId } = request.body as any;
+      const userId = (request as any).user?.id;
 
       if (!newLeaderId) {
         return reply.status(400).send({

@@ -1,3 +1,4 @@
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
 import TournamentMatch from "../models/TournamentMatch";
@@ -19,7 +20,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Generate matches for a tournament when it starts
-  fastify.post("/generate/:tournamentId", async (request, reply) => {
+  fastify.post("/generate/:tournamentId", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { tournamentId } = request.params as { tournamentId: string };
 
@@ -132,7 +133,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Update match result (admin only)
-  fastify.put("/:matchId/result", async (request, reply) => {
+  fastify.put("/:matchId/result", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { matchId } = request.params as { matchId: string };
       const { winnerId, loserId, score, adminNotes, applyLoserDeduction } =
@@ -347,7 +348,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Update bounty coin settings for a match (admin only)
-  fastify.put("/:matchId/bounty", async (request, reply) => {
+  fastify.put("/:matchId/bounty", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { matchId } = request.params as { matchId: string };
       const { bountyCoinAmount, applyLoserDeduction } = request.body as {
@@ -428,7 +429,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Create a new match (admin only)
-  fastify.post("/", async (request, reply) => {
+  fastify.post("/", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const {
         tournamentId,
@@ -531,7 +532,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Update match (admin only)
-  fastify.put("/:matchId", async (request, reply) => {
+  fastify.put("/:matchId", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { matchId } = request.params as { matchId: string };
       const updateData = request.body as any;
@@ -612,7 +613,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Update match status (admin only)
-  fastify.put("/:matchId/status", async (request, reply) => {
+  fastify.put("/:matchId/status", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { matchId } = request.params as { matchId: string };
       const { status } = request.body as { status: string };
@@ -671,7 +672,7 @@ const tournamentMatchRoutes: FastifyPluginAsync = async (
   });
 
   // Delete match (admin only)
-  fastify.delete("/:matchId", async (request, reply) => {
+  fastify.delete("/:matchId", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { matchId } = request.params as { matchId: string };
 
