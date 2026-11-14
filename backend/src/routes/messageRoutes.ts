@@ -1,3 +1,4 @@
+import { validateDirectMessageReply, InvalidDirectMessageReplyError, sameConversationReply } from "../services/directMessagePolicy";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { authenticateToken, AuthenticatedRequest } from "../middleware/auth";
 import Message from "../models/Message";
@@ -52,7 +53,7 @@ const messageRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           .populate("receiverId", "name avatar")
           .populate({
             path: "replyToId",
-            select: "content senderId",
+            select: "content senderId receiverId",
             populate: {
               path: "senderId",
               select: "name",
@@ -69,8 +70,9 @@ const messageRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           status: msg.status,
           isRead: msg.isRead,
           createdAt: msg.createdAt,
-          replyToId: msg.replyToId?._id?.toString(),
-          replyTo: msg.replyToId
+          replyToId: sameConversationReply(msg.replyToId, msg.senderId, msg.receiverId)
+            ? msg.replyToId._id.toString() : undefined,
+          replyTo: sameConversationReply(msg.replyToId, msg.senderId, msg.receiverId)
             ? {
                 id: msg.replyToId._id.toString(),
                 content: msg.replyToId.content,
@@ -139,14 +141,14 @@ const messageRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           });
         }
 
-        if (!receiverId || !content) {
+        if (typeof receiverId !== "string" || typeof content !== "string" || !content) {
           return reply.status(400).send({
             success: false,
             message: "Receiver ID and content are required",
           });
         }
 
-        if (content.trim().length === 0) {
+        if (content.trim().length === 0 || content.length > 2000) {
           return reply.status(400).send({
             success: false,
             message: "Message content cannot be empty",
@@ -161,12 +163,15 @@ const messageRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           });
         }
 
-        // Validate replyToId if provided
-        if (replyToId && !mongoose.Types.ObjectId.isValid(replyToId)) {
-          return reply.status(400).send({
-            success: false,
-            message: "Invalid reply message ID",
-          });
+        // Never attach another conversation's message: even populated previews
+        // would otherwise expose private message text to the wrong people.
+        try {
+          await validateDirectMessageReply(replyToId, currentUserId, receiverId);
+        } catch (error) {
+          if (error instanceof InvalidDirectMessageReplyError) {
+            return reply.status(400).send({ success: false, message: error.message });
+          }
+          throw error;
         }
 
         // Check if receiver exists
@@ -195,7 +200,7 @@ const messageRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         await newMessage.populate("receiverId", "name avatar");
         await newMessage.populate({
           path: "replyToId",
-          select: "content senderId",
+          select: "content senderId receiverId",
           populate: {
             path: "senderId",
             select: "name",

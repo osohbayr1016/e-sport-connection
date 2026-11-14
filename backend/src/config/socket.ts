@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+import { validateDirectMessageReply, InvalidDirectMessageReplyError } from "../services/directMessagePolicy";
 import { Server as SocketIOServer } from "socket.io";
 import { Server as HTTPServer } from "http";
 import jwt from "jsonwebtoken";
@@ -139,10 +141,11 @@ export class SocketManager {
       // Handle message sending
       socket.on("send_message", async (data) => {
         try {
-          const { receiverId, content, replyToId } = data;
+          const { receiverId, content, replyToId } = data || {};
           const senderId = socket.data.userId;
           if (!senderId) { socket.emit("message_error", { error: "Authentication required" }); return; }
-          if (!receiverId || typeof content !== "string" || !content.trim() || content.length > 4000) {
+          if (typeof receiverId !== "string" || !mongoose.isValidObjectId(receiverId) ||
+              typeof content !== "string" || !content.trim() || content.length > 2000) {
             socket.emit("message_error", {
               error: "Invalid message data",
             });
@@ -169,6 +172,16 @@ export class SocketManager {
             return;
           }
 
+          // The reply target must belong to this exact two-person conversation.
+          try {
+            await validateDirectMessageReply(replyToId, senderId, receiverId);
+          } catch (error) {
+            if (error instanceof InvalidDirectMessageReplyError) {
+              socket.emit("message_error", { error: error.message });
+              return;
+            }
+            throw error;
+          }
           // Save message to database
           const newMessage = new Message({
             senderId,
