@@ -51,7 +51,7 @@ if (fs.existsSync(distPath)) {
 // Install dependencies
 console.log('📦 Installing dependencies...');
 try {
-    execSync('npm install', { 
+    execSync('npm ci', { 
         cwd: __dirname, 
         stdio: 'inherit',
         timeout: 300000 // 5 minutes

@@ -104,6 +104,7 @@ export default function Navigation() {
   const mainNavItems: Array<{ name: string; href: string; icon?: string }> = [
     { name: "Нүүр", href: "/" },
     { name: "Тэмцээнүүд", href: "/tournaments" },
+    ...(user ? [{ name: "Миний тэмцээн", href: "/my-tournaments" }] : []),
     { name: "Тоглогчид", href: "/players" },
     { name: "Багууд", href: "/squads" },
     { name: "Санал хүсэлт", href: "/feedback" },

@@ -10,6 +10,7 @@ export interface ITournamentRegistration extends Document {
   paymentDate?: Date;
   paymentProof?: string; // URL to payment proof image
   registrationDate: Date;
+  checkedInAt?: Date;
   isApproved: boolean; // Admin approval
   approvedBy?: mongoose.Types.ObjectId; // Admin ID who approved
   approvedAt?: Date;
@@ -76,6 +77,7 @@ const tournamentRegistrationSchema = new Schema<ITournamentRegistration>(
       type: Date,
       default: Date.now,
     },
+    checkedInAt: { type: Date },
     isApproved: {
       type: Boolean,
       default: false,
@@ -151,7 +153,14 @@ tournamentRegistrationSchema.index({ status: 1 });
 
 // Validation: Ensure squad leader is in squad members
 tournamentRegistrationSchema.pre("save", function (next) {
-  if (!this.squadMembers.includes(this.squadLeader)) {
+  const seen = new Set<string>();
+  this.squadMembers = this.squadMembers.filter((member) => {
+    const id = member.toString();
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  if (this.squadLeader && !seen.has(this.squadLeader.toString())) {
     this.squadMembers.push(this.squadLeader);
   }
   next();

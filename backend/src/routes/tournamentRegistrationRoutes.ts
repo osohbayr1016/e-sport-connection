@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+import { createTournamentRegistration, cancelTournamentRegistration, handleTournamentRegistrationError } from "../services/tournamentRegistrationService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import TournamentRegistration from "../models/TournamentRegistration";
@@ -88,146 +90,80 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Register squad for tournament
+  // Only the authenticated user may see their own registrations.
+  fastify.get("/my", { preHandler: [authenticateToken] }, async (request, reply) => {
+    try {
+      const actorId = (request as any).user?.id;
+      const registrations = await TournamentRegistration.find({ squadLeader: actorId })
+        .select("tournament squad registrationDate isApproved approvalStatus paymentStatus checkedInAt status")
+        .populate("tournament", "name game startDate endDate status bannerImage maxSquads currentSquads")
+        .populate("squad", "name tag logo")
+        .sort({ registrationDate: -1 }).limit(100).lean();
+      return reply.send({ success: true, registrations });
+    } catch (error) {
+      request.log.error({ error }, "My tournaments query failed");
+      return reply.status(500).send({ success: false, message: "Unable to load registrations" });
+    }
+  });
+
+  // An approved team leader can check in during the 24h before tournament start.
+  fastify.post("/:id/check-in", { preHandler: [authenticateToken] }, async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const actorId = (request as any).user?.id;
+      if (!mongoose.isValidObjectId(id)) return reply.status(400).send({ success: false, message: "Invalid registration ID" });
+      const registration = await TournamentRegistration.findOne({ _id: id, squadLeader: actorId });
+      if (!registration) return reply.status(404).send({ success: false, message: "Registration not found" });
+      if (!registration.isApproved || registration.paymentStatus !== "paid") {
+        return reply.status(409).send({ success: false, message: "Registration must be approved before check-in" });
+      }
+      const tournament = await Tournament.findById(registration.tournament);
+      if (!tournament) return reply.status(404).send({ success: false, message: "Tournament not found" });
+      if (!["upcoming", "registration_open", "registration_closed"].includes(tournament.status)) {
+        return reply.status(409).send({ success: false, message: "Tournament check-in is closed" });
+      }
+      const start = new Date(tournament.startDate).getTime();
+      const now = Date.now();
+      if (!Number.isFinite(start) || now < start - 86400000 || now >= start) {
+        return reply.status(409).send({ success: false, message: "Check-in opens 24 hours before tournament start" });
+      }
+      if (registration.checkedInAt) return reply.send({ success: true, alreadyCheckedIn: true, checkedInAt: registration.checkedInAt });
+      const updated = await TournamentRegistration.findOneAndUpdate(
+        { _id: id, squadLeader: actorId, isApproved: true, paymentStatus: "paid", checkedInAt: { $exists: false } },
+        { $set: { checkedInAt: new Date() } },
+        { new: true }
+      );
+      if (!updated) {
+        const existing = await TournamentRegistration.findById(id).select("checkedInAt").lean();
+        if (existing?.checkedInAt) return reply.send({ success: true, alreadyCheckedIn: true, checkedInAt: existing.checkedInAt });
+        return reply.status(409).send({ success: false, message: "Registration changed; refresh and try again" });
+      }
+      return reply.send({ success: true, alreadyCheckedIn: false, checkedInAt: updated.checkedInAt });
+    } catch (error) {
+      request.log.error({ error }, "Tournament check-in failed");
+      return reply.status(500).send({ success: false, message: "Unable to check in" });
+    }
+  });
+
   fastify.post("/register", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
-      const { tournamentId, squadId, squadLeaderId, paymentProof } =
-        request.body as any;
-
-      // Validate required fields
-      if (!tournamentId || !squadId || !squadLeaderId) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament ID, Squad ID, and Squad Leader ID are required",
-        });
-      }
-
-      if (squadLeaderId !== (request as any).user?.id) {
-        return reply.status(403).send({ success: false, message: "Only the authenticated squad leader can register" });
-      }
-      // Check if tournament exists and registration is open
-      const tournament = await Tournament.findById(tournamentId);
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-
-      // Registration remains open until the tournament is started by admin.
-      if (
-        tournament.status === "ongoing" ||
-        tournament.status === "completed"
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament has already started",
-        });
-      }
-
-      // Check if tournament is full
-      if (tournament.currentSquads >= tournament.maxSquads) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament is full",
-        });
-      }
-
-      // Check if squad exists and leader is valid
-      const squad = await Squad.findById(squadId);
-      if (!squad) {
-        return reply.status(404).send({
-          success: false,
-          message: "Squad not found",
-        });
-      }
-
-      if (squad.leader.toString() !== squadLeaderId) {
-        return reply.status(403).send({
-          success: false,
-          message: "Only squad leader can register for tournament",
-        });
-      }
-
-      // Check if squad is already registered
-      const existingRegistration = await TournamentRegistration.findOne({
-        tournament: tournamentId,
-        squad: squadId,
+      const { tournamentId, squadId, paymentProof } = request.body as {
+        tournamentId: string; squadId: string; paymentProof?: string;
+      };
+      const result = await createTournamentRegistration({
+        tournamentId, squadId, paymentProof, actorId: (request as any).user?.id,
       });
-
-      if (existingRegistration) {
-        return reply.status(400).send({
-          success: false,
-          message: "Squad is already registered for this tournament",
-        });
-      }
-
-      // Handle different tournament types
-      let paymentStatus = "pending";
-      let isApproved = false;
-      let approvalStatus = "pending";
-
-      // Default to tax tournament type if not specified (for backward compatibility)
-      const tournamentType = tournament.tournamentType || "tax";
-
-      if (tournamentType === "free") {
-        // Free tournaments are automatically approved
-        paymentStatus = "paid";
-        isApproved = true;
-        approvalStatus = "approved";
-      } else if (tournamentType === "tax") {
-        // Tax tournaments require payment proof and admin approval
-        if (!paymentProof) {
-          return reply.status(400).send({
-            success: false,
-            message: "Payment proof is required for tax tournaments",
-          });
-        }
-        paymentStatus = "pending";
-        isApproved = false;
-        approvalStatus = "pending";
-      }
-
-      // Create registration
-      const registration = new TournamentRegistration({
-        tournament: tournamentId,
-        squad: squadId,
-        squadLeader: squadLeaderId,
-        squadMembers: squad.members,
-        registrationFee: tournament.entryFee,
-        paymentProof,
-        paymentStatus,
-        isApproved,
-        approvalStatus,
-        paymentDate: paymentProof ? new Date() : undefined,
-      });
-
-      await registration.save();
-
-      // Update tournament participant count
-      tournament.currentSquads += 1;
-      await tournament.save();
-
-      const populatedRegistration = await TournamentRegistration.findById(
-        registration._id
-      )
+      const populated = await TournamentRegistration.findById(result.registration._id)
         .populate("tournament", "name game startDate")
         .populate("squad", "name tag")
         .populate("squadLeader", "name email")
         .populate("squadMembers", "name email")
         .lean();
-
       return reply.status(201).send({
-        success: true,
-        message: "Squad registered successfully",
-        registration: populatedRegistration,
+        success: true, message: "Squad registered successfully", registration: populated,
       });
     } catch (error) {
-      console.error("Register squad for tournament error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to register squad for tournament",
-      });
+      return handleTournamentRegistrationError(error, reply);
     }
   });
 
@@ -364,7 +300,7 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Get tournament registrations by tournament ID
-  fastify.get("/tournament/:tournamentId", async (request, reply) => {
+  fastify.get("/tournament/:tournamentId", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { tournamentId } = request.params as { tournamentId: string };
       const { page = 1, limit = 10 } = request.query as any;
@@ -404,9 +340,15 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   });
 
   // Get squad registrations by squad ID
-  fastify.get("/squad/:squadId", async (request, reply) => {
+  fastify.get("/squad/:squadId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { squadId } = request.params as { squadId: string };
+      const actor = (request as any).user;
+      const squad = await Squad.findById(squadId).select("leader");
+      if (!squad) return reply.status(404).send({ success: false, message: "Squad not found" });
+      if (actor?.role !== "ADMIN" && squad.leader.toString() !== actor?.id) {
+        return reply.status(403).send({ success: false, message: "Only squad leader can view registration payments" });
+      }
 
       const registrations = await TournamentRegistration.find({
         squad: squadId,
@@ -429,50 +371,15 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Cancel a not-yet-started registration; never trust a client-supplied leader ID.
   fastify.delete("/:id", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const userId = (request as any).user?.id;
-      const registration = await TournamentRegistration.findById(id);
-      if (!registration) {
-        return reply.status(404).send({ success: false, message: "Registration not found" });
-      }
-      if (!userId || registration.squadLeader.toString() !== userId) {
-        return reply.status(403).send({ success: false, message: "Only squad leader can cancel registration" });
-      }
-
-      const tournament = await Tournament.findById(registration.tournament);
-      if (!tournament) {
-        return reply.status(404).send({ success: false, message: "Tournament not found" });
-      }
-      if (!["upcoming", "registration_open", "registration_closed"].includes(tournament.status)) {
-        return reply.status(409).send({ success: false, message: "Tournament has already started or was cancelled" });
-      }
-
-      // One atomic delete per registration prevents duplicate requests decrementing twice.
-      const deleted = await TournamentRegistration.findOneAndDelete({
-        _id: id,
-        squadLeader: userId,
-      });
-      if (!deleted) {
-        return reply.status(409).send({ success: false, message: "Registration already cancelled" });
-      }
-      await Tournament.updateOne(
-        { _id: tournament._id, currentSquads: { $gt: 0 } },
-        { $inc: { currentSquads: -1 } }
-      );
-
-      return reply.status(200).send({
-        success: true,
-        message: "Registration cancelled successfully",
-      });
+      await cancelTournamentRegistration(id, (request as any).user?.id);
+      return reply.status(200).send({ success: true, message: "Registration cancelled successfully" });
     } catch (error) {
-      console.error("Cancel registration error:", error);
-      return reply.status(500).send({ success: false, message: "Failed to cancel registration" });
+      return handleTournamentRegistrationError(error, reply);
     }
   });
-
 
   // Get pending tax tournament registrations (admin only)
   fastify.get("/pending-tax", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {

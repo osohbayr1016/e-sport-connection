@@ -38,14 +38,13 @@ export class SocketManager {
           token,
           process.env.JWT_SECRET!
         ) as JWTPayload;
-        socket.data.userId = decoded.id;
+        const user = await User.findById(decoded.id).select("_id").lean();
+        if (!user) return next(new Error("Invalid authentication session"));
+        socket.data.userId = user._id.toString();
         socket.data.userEmail = decoded.email;
         next();
       } catch (error) {
-        // Allow connection even if token is invalid for connection status
-        socket.data.userId = null;
-        socket.data.userEmail = null;
-        next();
+        next(new Error("Invalid or expired authentication token"));
       }
     });
 
@@ -109,8 +108,8 @@ export class SocketManager {
         try {
           const { receiverId, content, replyToId } = data;
           const senderId = socket.data.userId;
-
-          if (!receiverId || !content || !content.trim()) {
+          if (!senderId) { socket.emit("message_error", { error: "Authentication required" }); return; }
+          if (!receiverId || typeof content !== "string" || !content.trim() || content.length > 4000) {
             socket.emit("message_error", {
               error: "Invalid message data",
             });
@@ -261,7 +260,8 @@ export class SocketManager {
 
       // Handle typing indicators
       socket.on("typing_start", (data) => {
-        const { receiverId } = data;
+        if (!socket.data.userId) return;
+        const { receiverId } = data || {};
         const receiverSocketId = this.connectedUsers.get(receiverId);
         if (receiverSocketId) {
           this.io!.to(receiverSocketId).emit("user_typing", {
@@ -271,7 +271,8 @@ export class SocketManager {
       });
 
       socket.on("typing_stop", (data) => {
-        const { receiverId } = data;
+        if (!socket.data.userId) return;
+        const { receiverId } = data || {};
         const receiverSocketId = this.connectedUsers.get(receiverId);
         if (receiverSocketId) {
           this.io!.to(receiverSocketId).emit("user_stopped_typing", {
@@ -285,6 +286,7 @@ export class SocketManager {
         try {
           const { senderId } = data;
           const receiverId = socket.data.userId;
+          if (!receiverId) return;
 
           // Update messages as read in database
           await Message.updateMany(

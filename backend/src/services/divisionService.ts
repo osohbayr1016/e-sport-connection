@@ -1,3 +1,4 @@
+import mongoose, { ClientSession } from "mongoose";
 import Squad, { SquadDivision } from "../models/Squad";
 import TournamentMatch from "../models/TournamentMatch";
 import BountyCoin from "../models/BountyCoin";
@@ -18,72 +19,54 @@ export class DivisionService {
    * Process match result and update squad divisions and bounty coins
    */
   static async processMatchResult(matchId: string): Promise<void> {
-    const match = await TournamentMatch.findById(matchId);
-    if (!match || !match.winner || !match.loser) {
-      throw new Error("Match not found or not completed");
+    if (!mongoose.isValidObjectId(matchId)) throw new Error("Invalid match ID");
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        // A second concurrent processor must either see the completed flag or
+        // conflict and retry. Awarding coins and setting the flag are atomic.
+        const match = await TournamentMatch.findById(matchId).session(session);
+        if (!match || !match.winner || !match.loser || match.status !== "completed") {
+          throw new Error("Match not found or not completed");
+        }
+        if (match.divisionChangesProcessed) return;
+        const [squad1, squad2] = await Promise.all([
+          Squad.findById(match.squad1).session(session),
+          Squad.findById(match.squad2).session(session),
+        ]);
+        if (!squad1 || !squad2) throw new Error("Squads not found");
+
+        const firstId = squad1._id.toString();
+        const secondId = squad2._id.toString();
+        const winner = match.winner.toString(), loser = match.loser.toString();
+        if (!((winner === firstId && loser === secondId) || (winner === secondId && loser === firstId))) {
+          throw new Error("Invalid winning and losing squads");
+        }
+
+        match.squad1Division = squad1.division;
+        match.squad2Division = squad2.division;
+        const squad1IsWinner = winner === firstId;
+        const squad2IsWinner = winner === secondId;
+        const defaultWinnerAward = calculateBountyCoinsForMatch(squad1.division, true);
+        const defaultLoserDeduction = Math.abs(calculateBountyCoinsForMatch(squad1.division, false));
+        const winnerAward = Math.max(0, match.bountyCoinAmount ?? defaultWinnerAward);
+        const loserDeduction = match.matchType === "normal" && match.applyLoserDeduction !== false
+          ? defaultLoserDeduction : 0;
+        const squad1BountyChange = squad1IsWinner ? winnerAward : -loserDeduction;
+        const squad2BountyChange = squad2IsWinner ? winnerAward : -loserDeduction;
+
+        match.squad1BountyChange = squad1BountyChange;
+        match.squad2BountyChange = squad2BountyChange;
+        // MongoDB transactions should be sequential on this same session.
+        await this.updateSquadAfterMatch(squad1, squad1BountyChange, squad1IsWinner, session);
+        await this.updateSquadAfterMatch(squad2, squad2BountyChange, squad2IsWinner, session);
+        match.divisionChangesProcessed = true;
+        match.bountyCoinsDistributed = true;
+        await match.save({ session });
+      });
+    } finally {
+      await session.endSession();
     }
-
-    if (match.divisionChangesProcessed) {
-      return; // Already processed
-    }
-
-    // Get squads
-    const squad1 = await Squad.findById(match.squad1);
-    const squad2 = await Squad.findById(match.squad2);
-
-    if (!squad1 || !squad2) {
-      throw new Error("Squads not found");
-    }
-
-    // Record divisions at match time
-    match.squad1Division = squad1.division;
-    match.squad2Division = squad2.division;
-
-    // Calculate bounty coin changes (with override support via match fields)
-    const squad1IsWinner = match.winner.toString() === squad1._id.toString();
-    const squad2IsWinner = match.winner.toString() === squad2._id.toString();
-
-    // Defaults from division config
-    const defaultWinnerAward = calculateBountyCoinsForMatch(
-      squad1.division,
-      true
-    );
-    const defaultLoserDeduction = Math.abs(
-      calculateBountyCoinsForMatch(squad1.division, false)
-    );
-
-    // Overrides from match
-    const winnerAward = Math.max(
-      0,
-      match.bountyCoinAmount || defaultWinnerAward
-    );
-    const loserDeduction =
-      match.matchType === "normal" && match.applyLoserDeduction !== false
-        ? defaultLoserDeduction
-        : 0;
-
-    const squad1BountyChange = squad1IsWinner ? winnerAward : -loserDeduction;
-    const squad2BountyChange = squad2IsWinner ? winnerAward : -loserDeduction;
-
-    match.squad1BountyChange = squad1BountyChange;
-    match.squad2BountyChange = squad2BountyChange;
-
-    // Update squad bounty coins and process division changes
-    await this.updateSquadAfterMatch(
-      squad1,
-      squad1BountyChange,
-      squad1IsWinner
-    );
-    await this.updateSquadAfterMatch(
-      squad2,
-      squad2BountyChange,
-      squad2IsWinner
-    );
-
-    // Update match
-    match.divisionChangesProcessed = true;
-    match.bountyCoinsDistributed = true;
-    await match.save();
   }
 
   /**
@@ -92,7 +75,8 @@ export class DivisionService {
   private static async updateSquadAfterMatch(
     squad: any,
     bountyChange: number,
-    isWinner: boolean
+    isWinner: boolean,
+    session?: ClientSession
   ): Promise<void> {
     // Update consecutive losses
     if (isWinner) {
@@ -119,7 +103,7 @@ export class DivisionService {
         squad.consecutiveLosses
       )
     ) {
-      await this.demoteSquadDivision(squad);
+      await this.demoteSquadDivision(squad, session);
     }
 
     // Update total bounty coins
@@ -129,7 +113,7 @@ export class DivisionService {
       squad.totalBountyCoinsSpent += Math.abs(bountyChange);
     }
 
-    await squad.save();
+    await squad.save({ session });
   }
 
   /**
@@ -161,7 +145,7 @@ export class DivisionService {
   /**
    * Demote squad to previous division
    */
-  static async demoteSquadDivision(squad: any): Promise<void> {
+  static async demoteSquadDivision(squad: any, session?: ClientSession): Promise<void> {
     const prevDivision = getPreviousDivision(squad.division);
     if (!prevDivision) {
       throw new Error("Cannot demote further");
@@ -178,7 +162,7 @@ export class DivisionService {
     squad.consecutiveLosses = 0;
     squad.protectionCount = resetProtections();
 
-    await squad.save();
+    await squad.save({ session });
   }
 
   /**

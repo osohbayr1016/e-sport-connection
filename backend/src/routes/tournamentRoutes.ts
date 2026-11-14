@@ -1,3 +1,4 @@
+import { createTournamentRegistration, handleTournamentRegistrationError } from "../services/tournamentRegistrationService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import mongoose from "mongoose";
@@ -144,14 +145,21 @@ const tournamentRoutes: FastifyPluginAsync = async (
         "startDate",
         "endDate",
         "prizePool",
-        "maxParticipants",
+        "maxSquads",
         "location",
         "organizer",
         "registrationDeadline",
       ];
-      const missingFields = requiredFields.filter(
-        (field) => !tournamentData[field]
-      );
+      const maxSquads = tournamentData.maxSquads ?? tournamentData.maxParticipants;
+      const missingFields = requiredFields.filter((field) => {
+        if (field === "maxSquads") return maxSquads === undefined || maxSquads === null;
+        const value = tournamentData[field];
+        return value === undefined || value === null ||
+          (typeof value === "string" && !value.trim());
+      });
+      if (!Number.isSafeInteger(Number(maxSquads)) || Number(maxSquads) < 2 || Number(maxSquads) > 256) {
+        return reply.status(400).send({ success: false, message: "maxSquads must be between 2 and 256" });
+      }
 
       if (missingFields.length > 0) {
         return reply.status(400).send({
@@ -168,6 +176,9 @@ const tournamentRoutes: FastifyPluginAsync = async (
         tournamentData.registrationDeadline
       );
 
+      if (![startDate, endDate, registrationDeadline].every(d => Number.isFinite(d.getTime()))) {
+        return reply.status(400).send({ success: false, message: "Invalid tournament date" });
+      }
       if (startDate >= endDate) {
         return reply.status(400).send({
           success: false,
@@ -178,7 +189,12 @@ const tournamentRoutes: FastifyPluginAsync = async (
       // Relax validation: allow registration deadline to be on/after start date,
       // since registration stays open until admin starts the tournament.
 
-      const newTournament = new Tournament(tournamentData);
+      const newTournament = new Tournament({
+        ...tournamentData,
+        maxSquads: Number(maxSquads),
+        currentSquads: 0,
+        entryFee: tournamentData.tournamentType === "free" ? 0 : tournamentData.entryFee,
+      });
       await newTournament.save();
 
       return reply.status(201).send({
@@ -319,219 +335,77 @@ const tournamentRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Get tournament registrations (for tournament detail page)
+  // Public list: approved participants only, never payment evidence or emails.
   fastify.get("/:id/registrations", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { page = 1, limit = 10 } = request.query as any;
-
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-
+      if (!mongoose.isValidObjectId(id)) return reply.status(400).send({ success: false, message: "Invalid tournament ID" });
+      const query = request.query as { page?: string; limit?: string };
+      const page = Math.max(1, Number.parseInt(query.page || "1", 10) || 1);
+      const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit || "10", 10) || 10));
+      const filter = { tournament: id, isApproved: true, isBanned: { $ne: true } };
       const [registrations, total] = await Promise.all([
-        TournamentRegistration.find({ tournament: id })
+        TournamentRegistration.find(filter)
+          .select("tournament squad squadLeader squadMembers registrationDate status isApproved approvalStatus")
           .populate("squad", "name tag logo")
-          .populate("squadLeader", "name email avatar")
-          .populate("squadMembers", "name email avatar")
-          .sort({ registrationDate: -1 })
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        TournamentRegistration.countDocuments({ tournament: id }),
+          .populate("squadLeader", "name avatar")
+          .populate("squadMembers", "name avatar")
+          .sort({ registrationDate: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        TournamentRegistration.countDocuments(filter),
       ]);
-
-      return reply.status(200).send({
-        success: true,
-        registrations,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit)),
-        },
-      });
+      return reply.send({ success: true, registrations, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
     } catch (error) {
-      console.error("Get tournament registrations error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to get tournament registrations",
-      });
+      request.log.error({ error }, "Public registration list failed");
+      return reply.status(500).send({ success: false, message: "Failed to get tournament participants" });
     }
   });
 
-  // Register squad for tournament
+  // Legacy free tournament registration shares the transactional core.
   fastify.post("/:id/register", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { squadId, entryFee, currency } = request.body as any;
-
-      // Check if tournament exists
-      const tournament = await Tournament.findById(id);
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-
-      // Legacy quick-registration must never bypass payment verification.
-      if (tournament.tournamentType !== "free" || (tournament.entryFee || 0) > 0) {
-        return reply.status(400).send({
-          success: false,
-          message: "Use tournament-registrations/register for paid tournaments",
-        });
-      }
-      if (!["upcoming", "registration_open"].includes(tournament.status)) {
-        return reply.status(409).send({ success: false, message: "Registration closed" });
-      }
-      // Check if tournament is full
-      if (tournament.currentSquads >= tournament.maxSquads) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament is full",
-        });
-      }
-
-      // Check if squad is already registered
-      const existingRegistration = await TournamentRegistration.findOne({
-        tournament: id,
-        squad: squadId,
+      const { squadId } = request.body as { squadId: string };
+      const result = await createTournamentRegistration({
+        tournamentId: id, squadId, actorId: (request as any).user?.id, requireFree: true,
       });
-
-      if (existingRegistration) {
-        return reply.status(400).send({
-          success: false,
-          message: "Squad is already registered for this tournament",
-        });
-      }
-
-      // Get squad details to populate leader and members
-      const Squad = (await import("../models/Squad")).default;
-      const squad = await Squad.findById(squadId);
-      if (!squad) {
-        return reply.status(404).send({
-          success: false,
-          message: "Squad not found",
-        });
-      }
-
-      if (squad.leader.toString() !== (request as any).user?.id) {
-        return reply.status(403).send({ success: false, message: "Only the squad leader can register" });
-      }
-      // Create tournament registration
-      const registration = new TournamentRegistration({
-        tournament: id,
-        squad: squadId,
-        squadLeader: squad.leader,
-        squadMembers: squad.members,
-        registrationFee: 0,
-        paymentStatus: "paid", // Assuming payment is already processed
-        paymentDate: new Date(),
-        status: "registered",
-        isApproved: true, // Auto-approve for now
-      });
-
-      await registration.save();
-
-      // Update tournament current squads count
-      await Tournament.findByIdAndUpdate(id, {
-        $inc: { currentSquads: 1 },
-      });
-
-      // Trigger achievement check for tournament participation
+      // Achievement side effects should never invalidate an already committed registration.
       try {
         const { AchievementService } = await import("../services/achievementService");
-        
-        // Get squad members
-        const squad = await Squad.findById(squadId);
-        if (squad && squad.members) {
-          // Trigger achievement for each squad member
-          for (const member of squad.members) {
-            await AchievementService.processAchievementTrigger({
-              userId: member,
-              type: "tournament_participation",
-              data: {
-                game: tournament.game,
-                tournamentId: tournament._id as mongoose.Types.ObjectId,
-              },
-            });
-          }
+        for (const member of result.squad.members) {
+          await AchievementService.processAchievementTrigger({
+            userId: member,
+            type: "tournament_participation",
+            data: { game: result.tournament.game, tournamentId: result.tournament._id as mongoose.Types.ObjectId },
+          });
         }
-      } catch (achievementError) {
-        console.error("Error processing achievement triggers:", achievementError);
-        // Don't fail the registration if achievement processing fails
+      } catch (error) {
+        request.log.error({ error }, "Registration achievement delivery failed");
       }
-
       return reply.status(200).send({
-        success: true,
-        message: "Successfully registered for tournament",
-        registration,
+        success: true, message: "Successfully registered for tournament",
+        registration: result.registration,
       });
     } catch (error) {
-      console.error("Tournament registration error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to register for tournament",
-      });
+      return handleTournamentRegistrationError(error, reply);
     }
   });
 
-  // Start tournament and generate matches (admin only)
+  // Start and generate matches atomically: no ongoing event without its first bracket.
   fastify.post("/:id/start", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-
-      // Check if tournament exists
-      const tournament = await Tournament.findById(id);
-      if (!tournament) {
-        return reply.status(404).send({
-          success: false,
-          message: "Tournament not found",
-        });
-      }
-
-      // Allow admin to start tournament anytime unless already ongoing/completed
-      if (
-        tournament.status === "ongoing" ||
-        tournament.status === "completed"
-      ) {
-        return reply.status(400).send({
-          success: false,
-          message: "Tournament already started or completed",
-        });
-      }
-
-      // Check if there are enough squads
-      if (tournament.currentSquads < 2) {
-        return reply.status(400).send({
-          success: false,
-          message: "Need at least 2 squads to start tournament",
-        });
-      }
-
-      // Update tournament status to ongoing
-      await Tournament.findByIdAndUpdate(id, {
-        status: "ongoing",
-        startDate: new Date(),
-      });
-
-      // Generate matches using the tournament match service
-      const { generateTournamentMatches } = await import(
-        "../services/tournamentMatchService"
-      );
-      await generateTournamentMatches(id);
-
+      const { startTournamentWithBrackets } = await import("../services/tournamentMatchService");
+      await startTournamentWithBrackets(id);
       return reply.status(200).send({
         success: true,
-        message: "Tournament started successfully and matches generated",
+        message: "Tournament started and matches generated",
         tournamentId: id,
       });
     } catch (error) {
-      console.error("Tournament start error:", error);
-      return reply.status(500).send({
+      request.log.error({ error }, "Tournament start failed");
+      return reply.status(409).send({
         success: false,
-        message: "Failed to start tournament",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
+        message: error instanceof Error ? error.message : "Unable to start tournament",
       });
     }
   });

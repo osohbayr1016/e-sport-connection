@@ -29,8 +29,9 @@ test("tournament audit actors come from authenticated request", () => {
 test("registration payment status and cancellations are protected", () => {
   const routes = source("backend/src/routes/tournamentRegistrationRoutes.ts");
   assert.ok(routes.includes('"Invalid payment status"'));
-  assert.ok(routes.includes("TournamentRegistration.findOneAndDelete("));
-  assert.ok(routes.includes('currentSquads: { $gt: 0 }'));
+  const service = source("backend/src/services/tournamentRegistrationService.ts");
+  assert.ok(service.includes("TournamentRegistration.findOneAndDelete("));
+  assert.ok(service.includes('currentSquads: { $gt: 0 }'));
   assert.ok(!routes.includes("const { squadLeaderId } = request.body"));
 });
 

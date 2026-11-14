@@ -1,3 +1,4 @@
+import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyPluginAsync } from "fastify";
 import { DivisionService } from "../services/divisionService";
 import Squad, { SquadDivision } from "../models/Squad";
@@ -43,13 +44,17 @@ const divisionRoutes: FastifyPluginAsync = async (fastify, options) => {
   });
 
   // Use protection (requires authentication)
-  fastify.post("/protection/:squadId", async (request, reply) => {
+  fastify.post("/protection/:squadId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { squadId } = request.params as { squadId: string };
 
-      // Check if user is squad leader or member
-      // This would need to be implemented based on your squad membership logic
-
+      const squad = await Squad.findById(squadId);
+      if (!squad) return reply.status(404).send({ error: "Squad not found" });
+      const actor = (request as any).user?.id;
+      if (squad.leader.toString() !== actor &&
+          !squad.members.some(member => member.toString() === actor)) {
+        return reply.status(403).send({ error: "Squad membership required" });
+      }
       await DivisionService.useProtection(squadId);
 
       return reply.send({
@@ -71,40 +76,19 @@ const divisionRoutes: FastifyPluginAsync = async (fastify, options) => {
     }
   });
 
-  // Purchase bounty coins (requires authentication)
-  fastify.post("/purchase/:squadId", async (request, reply) => {
-    try {
-      const { squadId } = request.params as { squadId: string };
-      const { amount } = request.body as { amount: number };
-
-      if (!amount || amount <= 0) {
-        return reply.status(400).send({ error: "Invalid amount" });
-      }
-
-      // Validate amount is multiple of 50
-      if (amount % 50 !== 0) {
-        return reply
-          .status(400)
-          .send({ error: "Amount must be multiple of 50" });
-      }
-
-      const result = await DivisionService.purchaseBountyCoins(squadId, amount);
-
-      return reply.send({ success: true, data: result });
-    } catch (error) {
-      console.error("Error purchasing bounty coins:", error);
-      if (error instanceof Error && error.message === "Squad not found") {
-        return reply.status(404).send({ error: "Squad not found" });
-      }
-      return reply.status(500).send({ error: "Internal server error" });
-    }
+  // Coin balances must only increase after a verified purchase request.
+  fastify.post("/purchase/:squadId", { preHandler: [authenticateToken] }, async (_request, reply) => {
+    return reply.status(410).send({
+      success: false,
+      message: "Direct purchase disabled. Submit a bounty coin purchase request for administrator verification.",
+    });
   });
 
   // Upgrade division by spending bounty coins (leader-only)
-  fastify.post("/upgrade/:squadId", async (request, reply) => {
+  fastify.post("/upgrade/:squadId", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { squadId } = request.params as { squadId: string };
-      const { userId } = request.body as { userId: string };
+      const userId = (request as any).user?.id;
 
       if (!userId) {
         return reply.status(400).send({ error: "User ID is required" });
@@ -198,7 +182,7 @@ const divisionRoutes: FastifyPluginAsync = async (fastify, options) => {
   });
 
   // Process match result (admin only)
-  fastify.post("/process-match/:matchId", async (request, reply) => {
+  fastify.post("/process-match/:matchId", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { matchId } = request.params as { matchId: string };
 

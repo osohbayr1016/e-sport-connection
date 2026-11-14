@@ -6,7 +6,7 @@ export interface ITournamentMatch extends Document {
   matchNumber: number; // Sequential match number
   round: number; // Tournament round (1, 2, 3, etc.)
   squad1: mongoose.Types.ObjectId; // Squad ID
-  squad2: mongoose.Types.ObjectId; // Squad ID
+  squad2?: mongoose.Types.ObjectId | null; // Absent for automatic BYEs
   winner?: mongoose.Types.ObjectId; // Squad ID of winner
   loser?: mongoose.Types.ObjectId; // Squad ID of loser
   status: "scheduled" | "in_progress" | "completed" | "cancelled";
@@ -22,7 +22,7 @@ export interface ITournamentMatch extends Document {
   walkoverReason?: string; // Reason for walkover
   bountyCoinsDistributed: boolean; // Whether bounty coins have been distributed
   bountyCoinAmount: number; // Amount of bounty coins for this match
-  matchType: "normal" | "auto_win" | "walkover"; // Type of match result
+  matchType: "normal" | "auto_win" | "walkover" | "winners_bracket" | "losers_bracket" | "round_robin"; // Type of match result
   applyLoserDeduction: boolean; // Whether to deduct coins from loser
 
   // Division System Integration
@@ -60,7 +60,8 @@ const tournamentMatchSchema = new Schema<ITournamentMatch>(
     squad2: {
       type: Schema.Types.ObjectId,
       ref: "Squad",
-      required: true,
+      required: false,
+      default: null,
     },
     winner: {
       type: Schema.Types.ObjectId,
@@ -118,7 +119,7 @@ const tournamentMatchSchema = new Schema<ITournamentMatch>(
     },
     matchType: {
       type: String,
-      enum: ["normal", "auto_win", "walkover"],
+      enum: ["normal", "auto_win", "walkover", "winners_bracket", "losers_bracket", "round_robin"],
       default: "normal",
     },
     applyLoserDeduction: {
@@ -168,7 +169,12 @@ tournamentMatchSchema.index({ divisionChangesProcessed: 1 });
 
 // Validation: Ensure squads are different
 tournamentMatchSchema.pre("save", function (next) {
-  if (this.squad1.toString() === this.squad2.toString()) {
+  if (!this.squad2) {
+    if (this.matchType !== "auto_win" || this.status !== "completed" ||
+      this.winner?.toString() !== this.squad1.toString()) {
+      return next(new Error("Only a completed automatic bye may omit squad2"));
+    }
+  } else if (this.squad1.toString() === this.squad2.toString()) {
     return next(new Error("Squad1 and Squad2 cannot be the same"));
   }
   next();

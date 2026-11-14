@@ -1,138 +1,59 @@
-import request from "supertest";
-import { FastifyInstance } from "fastify";
 import { buildApp } from "../src/index";
+import type { FastifyInstance } from "fastify";
 
-describe("Squad Routes", () => {
+describe("squad access control", () => {
   let app: FastifyInstance;
-  let authToken: string;
-  let userId: string;
+  beforeAll(async () => { app = await buildApp(); await app.ready(); });
+  afterAll(async () => { await app.close(); });
 
-  beforeAll(async () => {
-    app = await buildApp();
-    await app.ready();
+  async function player(email: string) {
+    const signup = await app.inject({ method: "POST", url: "/api/auth/register",
+      payload: { name: email, email, password: "secure-test-password", role: "PLAYER" } });
+    expect(signup.statusCode).toBe(201);
+    return signup.json();
+  }
 
-    // Register and login a user for authenticated requests
-    const userData = {
-      name: "Squad Test User",
-      email: "squadtest@example.com",
-      password: "password123",
-      role: "PLAYER",
-    };
+  const payload = {
+    name: "Test Squad", tag: "QA5", game: "Mobile Legends: Bang Bang", maxMembers: 5
+  };
 
-    await request(app.server).post("/api/auth/register").send(userData);
-
-    const loginResponse = await request(app.server)
-      .post("/api/auth/login")
-      .send({
-        email: "squadtest@example.com",
-        password: "password123",
-      });
-
-    authToken = loginResponse.body.data.token;
-    userId = loginResponse.body.data.user._id;
+  test("creating a squad needs authentication", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/squads", payload });
+    expect(res.statusCode).toBe(401);
   });
 
-  afterAll(async () => {
-    await app.close();
+  test("ignores forged leader and financial fields on create", async () => {
+    const leader = await player("leader@example.com");
+    const outsider = await player("outsider@example.com");
+    const res = await app.inject({ method: "POST", url: "/api/squads",
+      headers: { authorization: "Bearer " + leader.token },
+      payload: { ...payload, leader: outsider.user.id, currentBountyCoins: 999999 } });
+    expect(res.statusCode).toBe(201);
+    const squad = res.json().squad;
+    expect(squad.leader._id || squad.leader).toBe(leader.user.id);
+    expect(squad.currentBountyCoins).toBe(0);
   });
 
-  describe("POST /api/squads", () => {
-    it("should create a new squad", async () => {
-      const squadData = {
-        name: "Test Squad",
-        tag: "TEST",
-        description: "A test squad",
-        game: "Counter-Strike 2",
-        maxMembers: 7,
-        isRecruiting: true,
-      };
-
-      const response = await request(app.server)
-        .post("/api/squads")
-        .set("Authorization", `Bearer ${authToken}`)
-        .send(squadData)
-        .expect(201);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.squad.name).toBe(squadData.name);
-      expect(response.body.squad.leader).toBe(userId);
-    });
-
-    it("should not create squad without authentication", async () => {
-      const squadData = {
-        name: "Unauthorized Squad",
-        tag: "UNAUTH",
-        description: "This should fail",
-        game: "Counter-Strike 2",
-        maxMembers: 7,
-        isRecruiting: true,
-      };
-
-      const response = await request(app.server)
-        .post("/api/squads")
-        .send(squadData)
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-    });
+  test("outsiders cannot take over squads by forging userId", async () => {
+    const leader = await player("leader@example.com");
+    const outsider = await player("outsider@example.com");
+    const created = await app.inject({ method: "POST", url: "/api/squads",
+      headers: { authorization: "Bearer " + leader.token }, payload });
+    const id = created.json().squad._id;
+    const attempt = await app.inject({ method: "PUT", url: "/api/squads/" + id,
+      headers: { authorization: "Bearer " + outsider.token },
+      payload: { userId: leader.user.id, name: "Hijacked" } });
+    expect(attempt.statusCode).toBe(403);
   });
 
-  describe("GET /api/squads", () => {
-    it("should get all squads", async () => {
-      const response = await request(app.server).get("/api/squads").expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(Array.isArray(response.body.squads)).toBe(true);
-    });
-
-    it("should filter squads by game", async () => {
-      const response = await request(app.server)
-        .get("/api/squads?game=Counter-Strike 2")
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(Array.isArray(response.body.squads)).toBe(true);
-    });
-  });
-
-  describe("GET /api/squads/:id", () => {
-    let squadId: string;
-
-    beforeEach(async () => {
-      // Create a squad for testing
-      const squadData = {
-        name: "Get Test Squad",
-        tag: "GETTEST",
-        description: "A squad for testing GET",
-        game: "Counter-Strike 2",
-        maxMembers: 7,
-        isRecruiting: true,
-      };
-
-      const createResponse = await request(app.server)
-        .post("/api/squads")
-        .set("Authorization", `Bearer ${authToken}`)
-        .send(squadData);
-
-      squadId = createResponse.body.squad._id;
-    });
-
-    it("should get a specific squad", async () => {
-      const response = await request(app.server)
-        .get(`/api/squads/${squadId}`)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.squad._id).toBe(squadId);
-    });
-
-    it("should return 404 for non-existent squad", async () => {
-      const fakeId = "507f1f77bcf86cd799439011";
-      const response = await request(app.server)
-        .get(`/api/squads/${fakeId}`)
-        .expect(404);
-
-      expect(response.body.success).toBe(false);
-    });
+  test("leaders cannot directly edit financial balances", async () => {
+    const leader = await player("leader@example.com");
+    const created = await app.inject({ method: "POST", url: "/api/squads",
+      headers: { authorization: "Bearer " + leader.token }, payload });
+    const id = created.json().squad._id;
+    const attempt = await app.inject({ method: "PUT", url: "/api/squads/" + id,
+      headers: { authorization: "Bearer " + leader.token },
+      payload: { currentBountyCoins: 200000 } });
+    expect(attempt.statusCode).toBe(400);
   });
 });

@@ -79,6 +79,8 @@ export const API_ENDPOINTS = {
     ALL: `${API_BASE_URL}/api/tournament-registrations`,
     GET: (id: string) => `${API_BASE_URL}/api/tournament-registrations/${id}`,
     CREATE: `${API_BASE_URL}/api/tournament-registrations/register`,
+    MY: `${API_BASE_URL}/api/tournament-registrations/my`,
+    CHECK_IN: (id: string) => `${API_BASE_URL}/api/tournament-registrations/${id}/check-in`,
     PENDING_TAX: `${API_BASE_URL}/api/tournament-registrations/pending-tax`,
     APPROVE: (id: string) =>
       `${API_BASE_URL}/api/tournament-registrations/${id}/approve`,

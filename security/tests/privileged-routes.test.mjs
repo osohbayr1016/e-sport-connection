@@ -30,15 +30,16 @@ test("privileged tournament routes require verified admin", () => {
   }
 });
 
-test("tournament registration requires authenticated squad leader and paid entries never auto-approve", () => {
-  const code = source("tournamentRoutes.ts");
-  assert.ok(code.includes('fastify.post("/:id/register", { preHandler: [authenticateToken] }'));
-  assert.ok(code.includes('tournament.tournamentType !== "free"'));
-  assert.ok(code.includes('squad.leader.toString() !== (request as any).user?.id'));
-  const reg = source("tournamentRegistrationRoutes.ts");
-  assert.ok(reg.includes('squadLeaderId !== (request as any).user?.id'));
-  assert.ok(reg.includes('const userId = (request as any).user?.id;'));
-  assert.ok(reg.includes('registration.squadLeader.toString() !== userId'));
+test("both tournament routes delegate to server-authorized transactional service", () => {
+  const quick = source("tournamentRoutes.ts");
+  const paid = source("tournamentRegistrationRoutes.ts");
+  assert.ok(quick.includes('fastify.post("/:id/register", { preHandler: [authenticateToken] }'));
+  assert.ok(paid.includes('fastify.post("/register", { preHandler: [authenticateToken] }'));
+  const service = readFileSync(new URL("../../backend/src/services/tournamentRegistrationService.ts", import.meta.url), "utf8");
+  assert.ok(service.includes('squad.leader.toString() !== actorId'));
+  assert.ok(service.includes('requireFree && (tournament.tournamentType !== "free"'));
+  assert.ok(service.includes('isApproved: isFree'));
+  assert.ok(service.includes("session.withTransaction("));
 });
 
 test("developer achievement triggers cannot be called anonymously", () => {
