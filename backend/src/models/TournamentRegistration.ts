@@ -10,6 +10,7 @@ export interface ITournamentRegistration extends Document {
   paymentDate?: Date;
   paymentProof?: string; // URL to payment proof image
   registrationDate: Date;
+  checkedInAt?: Date;
   isApproved: boolean; // Admin approval
   approvedBy?: mongoose.Types.ObjectId; // Admin ID who approved
   approvedAt?: Date;
@@ -76,6 +77,7 @@ const tournamentRegistrationSchema = new Schema<ITournamentRegistration>(
       type: Date,
       default: Date.now,
     },
+    checkedInAt: { type: Date },
     isApproved: {
       type: Boolean,
       default: false,

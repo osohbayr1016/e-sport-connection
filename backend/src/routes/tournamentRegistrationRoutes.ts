@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { createTournamentRegistration, cancelTournamentRegistration, handleTournamentRegistrationError } from "../services/tournamentRegistrationService";
 import { authenticateToken, requireAdmin } from "../middleware/auth";
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
@@ -86,6 +87,61 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
         success: false,
         message: "Failed to get tournament registrations",
       });
+    }
+  });
+
+  // Only the authenticated user may see their own registrations.
+  fastify.get("/my", { preHandler: [authenticateToken] }, async (request, reply) => {
+    try {
+      const actorId = (request as any).user?.id;
+      const registrations = await TournamentRegistration.find({ squadLeader: actorId })
+        .select("tournament squad registrationDate isApproved approvalStatus paymentStatus checkedInAt status")
+        .populate("tournament", "name game startDate endDate status bannerImage maxSquads currentSquads")
+        .populate("squad", "name tag logo")
+        .sort({ registrationDate: -1 }).limit(100).lean();
+      return reply.send({ success: true, registrations });
+    } catch (error) {
+      request.log.error({ error }, "My tournaments query failed");
+      return reply.status(500).send({ success: false, message: "Unable to load registrations" });
+    }
+  });
+
+  // An approved team leader can check in during the 24h before tournament start.
+  fastify.post("/:id/check-in", { preHandler: [authenticateToken] }, async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const actorId = (request as any).user?.id;
+      if (!mongoose.isValidObjectId(id)) return reply.status(400).send({ success: false, message: "Invalid registration ID" });
+      const registration = await TournamentRegistration.findOne({ _id: id, squadLeader: actorId });
+      if (!registration) return reply.status(404).send({ success: false, message: "Registration not found" });
+      if (!registration.isApproved || registration.paymentStatus !== "paid") {
+        return reply.status(409).send({ success: false, message: "Registration must be approved before check-in" });
+      }
+      const tournament = await Tournament.findById(registration.tournament);
+      if (!tournament) return reply.status(404).send({ success: false, message: "Tournament not found" });
+      if (!["upcoming", "registration_open", "registration_closed"].includes(tournament.status)) {
+        return reply.status(409).send({ success: false, message: "Tournament check-in is closed" });
+      }
+      const start = new Date(tournament.startDate).getTime();
+      const now = Date.now();
+      if (!Number.isFinite(start) || now < start - 86400000 || now >= start) {
+        return reply.status(409).send({ success: false, message: "Check-in opens 24 hours before tournament start" });
+      }
+      if (registration.checkedInAt) return reply.send({ success: true, alreadyCheckedIn: true, checkedInAt: registration.checkedInAt });
+      const updated = await TournamentRegistration.findOneAndUpdate(
+        { _id: id, squadLeader: actorId, isApproved: true, paymentStatus: "paid", checkedInAt: { $exists: false } },
+        { $set: { checkedInAt: new Date() } },
+        { new: true }
+      );
+      if (!updated) {
+        const existing = await TournamentRegistration.findById(id).select("checkedInAt").lean();
+        if (existing?.checkedInAt) return reply.send({ success: true, alreadyCheckedIn: true, checkedInAt: existing.checkedInAt });
+        return reply.status(409).send({ success: false, message: "Registration changed; refresh and try again" });
+      }
+      return reply.send({ success: true, alreadyCheckedIn: false, checkedInAt: updated.checkedInAt });
+    } catch (error) {
+      request.log.error({ error }, "Tournament check-in failed");
+      return reply.status(500).send({ success: false, message: "Unable to check in" });
     }
   });
 
