@@ -10,9 +10,44 @@ import StreamChat from "../models/StreamChat";
 import StreamViewer from "../models/StreamViewer";
 import { StreamService } from "../services/streamService";
 
+/**
+ * Keep every live device for a user. The last disconnect alone makes the
+ * user offline, so one tab closing cannot hide all their other sessions.
+ */
+export class UserConnectionRegistry {
+  private readonly users = new Map<string, Set<string>>();
+
+  connect(userId: string, socketId: string): boolean {
+    const existing = this.users.get(userId) || new Set<string>();
+    const wasOffline = existing.size === 0;
+    existing.add(socketId);
+    this.users.set(userId, existing);
+    return wasOffline;
+  }
+
+  disconnect(userId: string, socketId: string): boolean {
+    const sockets = this.users.get(userId);
+    if (!sockets || !sockets.delete(socketId)) return false;
+    if (sockets.size > 0) return false;
+    this.users.delete(userId);
+    return true;
+  }
+
+  socketsFor(userId: string): string[] {
+    return [...(this.users.get(userId) || [])];
+  }
+
+  isOnline(userId: string): boolean {
+    return (this.users.get(userId)?.size || 0) > 0;
+  }
+
+  get connectedUserCount(): number { return this.users.size; }
+  get onlineUsers(): string[] { return [...this.users.keys()]; }
+}
+
 export class SocketManager {
   private io: SocketIOServer | null = null;
-  private connectedUsers: Map<string, string> = new Map(); // userId -> socketId
+  private connectedUsers = new UserConnectionRegistry();
 
   public initialize(server: HTTPServer): void {
     this.io = new SocketIOServer(server, {
@@ -51,16 +86,14 @@ export class SocketManager {
     this.io.on("connection", async (socket) => {
       // Only handle authenticated users
       if (socket.data.userId) {
-        this.connectedUsers.set(socket.data.userId, socket.id);
-
-        // Update user online status in database
-        await User.findByIdAndUpdate(socket.data.userId, {
-          isOnline: true,
-          lastSeen: new Date(),
-        });
-
-        // Update user online status
-        this.broadcastUserStatus(socket.data.userId, "online");
+        const firstConnection = this.connectedUsers.connect(socket.data.userId, socket.id);
+        if (firstConnection) {
+          await User.findByIdAndUpdate(socket.data.userId, {
+            isOnline: true,
+            lastSeen: new Date(),
+          });
+          this.broadcastUserStatus(socket.data.userId, "online");
+        }
       }
 
       // Send pending notifications when user comes online (only for authenticated users)
@@ -208,13 +241,10 @@ export class SocketManager {
           };
 
           // Check if receiver is online
-          const receiverSocketId = this.connectedUsers.get(receiverId);
-          if (receiverSocketId) {
-            // Send message to online user
-            this.io!.to(receiverSocketId).emit("new_message", messageData);
-
-            // Send notification to online user
-            this.io!.to(receiverSocketId).emit("new_notification", {
+          if (this.connectedUsers.isOnline(receiverId)) {
+            // Deliver to every connected device, not just the latest tab.
+            this.sendToUser(receiverId, "new_message", messageData);
+            this.sendToUser(receiverId, "new_notification", {
               _id: notification._id.toString(),
               title: notification.title,
               content: notification.content,
@@ -262,9 +292,8 @@ export class SocketManager {
       socket.on("typing_start", (data) => {
         if (!socket.data.userId) return;
         const { receiverId } = data || {};
-        const receiverSocketId = this.connectedUsers.get(receiverId);
-        if (receiverSocketId) {
-          this.io!.to(receiverSocketId).emit("user_typing", {
+        if (receiverId && this.connectedUsers.isOnline(receiverId)) {
+          this.sendToUser(receiverId, "user_typing", {
             userId: socket.data.userId,
           });
         }
@@ -273,9 +302,8 @@ export class SocketManager {
       socket.on("typing_stop", (data) => {
         if (!socket.data.userId) return;
         const { receiverId } = data || {};
-        const receiverSocketId = this.connectedUsers.get(receiverId);
-        if (receiverSocketId) {
-          this.io!.to(receiverSocketId).emit("user_stopped_typing", {
+        if (receiverId && this.connectedUsers.isOnline(receiverId)) {
+          this.sendToUser(receiverId, "user_stopped_typing", {
             userId: socket.data.userId,
           });
         }
@@ -303,9 +331,8 @@ export class SocketManager {
           );
 
           // Notify sender that messages were read
-          const senderSocketId = this.connectedUsers.get(senderId);
-          if (senderSocketId) {
-            this.io!.to(senderSocketId).emit("message_read", {
+          if (senderId && this.connectedUsers.isOnline(senderId)) {
+            this.sendToUser(senderId, "message_read", {
               readerId: receiverId,
               timestamp: new Date().toISOString(),
             });
@@ -318,7 +345,7 @@ export class SocketManager {
       // Handle stream chat messages
       socket.on("stream_chat_message", async (data) => {
         try {
-          const { streamId, message, replyToId } = data;
+          const { streamId, message, replyToId } = data || {};
           const senderId = socket.data.userId;
 
           if (!senderId) {
@@ -328,10 +355,15 @@ export class SocketManager {
             return;
           }
 
-          if (!streamId || !message || !message.trim()) {
+          if (typeof streamId !== "string" || !/^[a-fA-F0-9]{24}$/.test(streamId) ||
+            typeof message !== "string" || !message.trim() || message.length > 1000) {
             socket.emit("stream_chat_error", {
               error: "Stream ID and message are required",
             });
+            return;
+          }
+          if (!socket.rooms.has(`stream_${streamId}`)) {
+            socket.emit("stream_chat_error", { error: "Join the stream before chatting" });
             return;
           }
 
@@ -370,7 +402,7 @@ export class SocketManager {
       // Handle joining a stream
       socket.on("join_stream", async (data) => {
         try {
-          const { streamId } = data;
+          const { streamId } = data || {};
           const userId = socket.data.userId;
 
           if (!streamId) {
@@ -416,7 +448,7 @@ export class SocketManager {
       // Handle leaving a stream
       socket.on("leave_stream", async (data) => {
         try {
-          const { streamId } = data;
+          const { streamId } = data || {};
           const userId = socket.data.userId;
 
           if (!streamId) {
@@ -446,7 +478,7 @@ export class SocketManager {
       // Handle stream reactions
       socket.on("stream_reaction", async (data) => {
         try {
-          const { streamId, emoji } = data;
+          const { streamId, emoji } = data || {};
           const userId = socket.data.userId;
 
           if (!userId) {
@@ -456,13 +488,18 @@ export class SocketManager {
             return;
           }
 
-          if (!streamId || !emoji) {
+          if (typeof streamId !== "string" || !/^[a-fA-F0-9]{24}$/.test(streamId) ||
+              typeof emoji !== "string" || !["🔥", "❤️", "👏", "🎉", "👍", "💯"].includes(emoji)) {
             socket.emit("stream_error", {
               error: "Stream ID and emoji are required",
             });
             return;
           }
 
+          if (!socket.rooms.has(`stream_${streamId}`)) {
+            socket.emit("stream_error", { error: "Join the stream before reacting" });
+            return;
+          }
           // Broadcast reaction to all stream viewers
           this.io!.to(`stream_${streamId}`).emit("stream_reaction", {
             streamId,
@@ -480,21 +517,24 @@ export class SocketManager {
 
       // Handle status updates
       socket.on("update_status", (data) => {
-        const { status } = data;
-        this.broadcastUserStatus(socket.data.userId, status);
+        const userId = socket.data.userId;
+        if (!userId || !this.connectedUsers.isOnline(userId)) return;
+        const status = data?.status;
+        if (status !== "online" && status !== "away") return;
+        this.broadcastUserStatus(userId, status);
       });
 
       // Handle disconnection
       socket.on("disconnect", async () => {
-        this.connectedUsers.delete(socket.data.userId);
-
-        // Update user offline status in database
-        await User.findByIdAndUpdate(socket.data.userId, {
+        const userId = socket.data.userId;
+        if (!userId) return;
+        // A separate tab/device can still have an active connection.
+        if (!this.connectedUsers.disconnect(userId, socket.id)) return;
+        await User.findByIdAndUpdate(userId, {
           isOnline: false,
           lastSeen: new Date(),
         });
-
-        this.broadcastUserStatus(socket.data.userId, "offline");
+        this.broadcastUserStatus(userId, "offline");
       });
     });
   }
@@ -516,20 +556,20 @@ export class SocketManager {
   }
 
   public getConnectedUsersCount(): number {
-    return this.connectedUsers.size;
+    return this.connectedUsers.connectedUserCount;
   }
 
   public isUserOnline(userId: string): boolean {
-    return this.connectedUsers.has(userId);
+    return this.connectedUsers.isOnline(userId);
   }
 
   public getOnlineUsers(): string[] {
-    return Array.from(this.connectedUsers.keys());
+    return this.connectedUsers.onlineUsers;
   }
 
   public sendToUser(userId: string, event: string, data: any): void {
-    const socketId = this.connectedUsers.get(userId);
-    if (socketId && this.io) {
+    if (!this.io) return;
+    for (const socketId of this.connectedUsers.socketsFor(userId)) {
       this.io.to(socketId).emit(event, data);
     }
   }
