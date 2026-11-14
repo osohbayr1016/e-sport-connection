@@ -1,6 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import User from "../models/User";
-import bcrypt from "bcryptjs";
 import { authenticateToken } from "../middleware/auth";
 
 const userRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
@@ -89,14 +88,12 @@ const userRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           });
         }
 
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
-
+        // User model hashes the plaintext password exactly once on save.
         // Create new user
         const newUser = new User({
           name,
           email: email.toLowerCase(),
-          password: hashedPassword,
+          password,
           role,
           isVerified: isVerified || false,
         });
@@ -166,7 +163,7 @@ const userRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         if (typeof isVerified === "boolean")
           existingUser.isVerified = isVerified;
         if (password) {
-          existingUser.password = await bcrypt.hash(password, 10);
+          existingUser.password = password; // Mongoose pre-save hook performs hashing
         }
 
         await existingUser.save();

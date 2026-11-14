@@ -540,10 +540,9 @@ const tournamentRoutes: FastifyPluginAsync = async (
   fastify.post("/:id/disqualify", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { squadId, reason, adminId } = request.body as {
+      const { squadId, reason } = request.body as {
         squadId: string;
         reason?: string;
-        adminId?: string;
       };
 
       if (!squadId) {
@@ -566,7 +565,7 @@ const tournamentRoutes: FastifyPluginAsync = async (
       );
       const result = await disqualifySquadFromTournament(id, squadId, {
         reason,
-        adminId,
+        adminId: (request as any).user?.id,
       });
 
       return reply.status(200).send({

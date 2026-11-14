@@ -235,7 +235,11 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   fastify.put("/:id/payment", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { paymentStatus, adminId } = request.body as any;
+      const { paymentStatus } = request.body as any;
+
+      if (!["pending", "paid", "failed", "refunded"].includes(paymentStatus)) {
+        return reply.status(400).send({ success: false, message: "Invalid payment status" });
+      }
 
       const registration = await TournamentRegistration.findById(id);
       if (!registration) {
@@ -277,13 +281,13 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
   fastify.put("/:id/approve", { preHandler: [authenticateToken, requireAdmin] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { adminId, action, reason } = request.body as any;
+      const { action, reason } = request.body as any;
 
       // Validate required fields
       if (!action) {
         return reply.status(400).send({
           success: false,
-          message: "Admin ID and action are required",
+          message: "Action is required",
         });
       }
 
@@ -425,35 +429,39 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
     }
   });
 
-  // Cancel registration (squad leader only)
+  // Cancel a not-yet-started registration; never trust a client-supplied leader ID.
   fastify.delete("/:id", { preHandler: [authenticateToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { squadLeaderId } = request.body as any;
-
+      const userId = (request as any).user?.id;
       const registration = await TournamentRegistration.findById(id);
       if (!registration) {
-        return reply.status(404).send({
-          success: false,
-          message: "Registration not found",
-        });
+        return reply.status(404).send({ success: false, message: "Registration not found" });
+      }
+      if (!userId || registration.squadLeader.toString() !== userId) {
+        return reply.status(403).send({ success: false, message: "Only squad leader can cancel registration" });
       }
 
-      if (registration.squadLeader.toString() !== (request as any).user?.id || squadLeaderId !== (request as any).user?.id) {
-        return reply.status(403).send({
-          success: false,
-          message: "Only squad leader can cancel registration",
-        });
-      }
-
-      // Update tournament participant count
       const tournament = await Tournament.findById(registration.tournament);
-      if (tournament) {
-        tournament.currentSquads -= 1;
-        await tournament.save();
+      if (!tournament) {
+        return reply.status(404).send({ success: false, message: "Tournament not found" });
+      }
+      if (!["upcoming", "registration_open", "registration_closed"].includes(tournament.status)) {
+        return reply.status(409).send({ success: false, message: "Tournament has already started or was cancelled" });
       }
 
-      await TournamentRegistration.findByIdAndDelete(id);
+      // One atomic delete per registration prevents duplicate requests decrementing twice.
+      const deleted = await TournamentRegistration.findOneAndDelete({
+        _id: id,
+        squadLeader: userId,
+      });
+      if (!deleted) {
+        return reply.status(409).send({ success: false, message: "Registration already cancelled" });
+      }
+      await Tournament.updateOne(
+        { _id: tournament._id, currentSquads: { $gt: 0 } },
+        { $inc: { currentSquads: -1 } }
+      );
 
       return reply.status(200).send({
         success: true,
@@ -461,13 +469,9 @@ const tournamentRegistrationRoutes: FastifyPluginAsync = async (
       });
     } catch (error) {
       console.error("Cancel registration error:", error);
-      return reply.status(500).send({
-        success: false,
-        message: "Failed to cancel registration",
-      });
+      return reply.status(500).send({ success: false, message: "Failed to cancel registration" });
     }
   });
-
 
 
   // Get pending tax tournament registrations (admin only)

@@ -6,6 +6,11 @@ on:
     branches: [sport]
     paths: ["community-worker/**", ".github/workflows/deploy-community-worker.yml"]
   workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: "Type YES to authorize a manual production deployment"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -29,7 +34,7 @@ jobs:
 
   deploy:
     needs: verify
-    if: ${{ github.event_name != 'pull_request' && vars.COMMUNITY_WORKER_AUTODEPLOY == 'enabled' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deploy == 'YES' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
