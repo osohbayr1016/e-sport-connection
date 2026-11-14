@@ -75,8 +75,10 @@ export class SocketManager {
           token,
           process.env.JWT_SECRET!
         ) as JWTPayload;
-        const user = await User.findById(decoded.id).select("_id").lean();
-        if (!user) return next(new Error("Invalid authentication session"));
+        const user = await User.findById(decoded.id).select("_id +tokenVersion").lean();
+        if (!user || (decoded.ver ?? 0) !== (user.tokenVersion ?? 0)) {
+          return next(new Error("Invalid or revoked authentication session"));
+        }
         socket.data.userId = user._id.toString();
         socket.data.userEmail = decoded.email;
         next();

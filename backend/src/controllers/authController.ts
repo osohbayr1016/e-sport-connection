@@ -20,13 +20,13 @@ interface RegisterRequest {
 }
 
 // Generate JWT token
-const generateToken = (userId: string, email: string, role: string): string => {
+const generateToken = (userId: string, email: string, role: string, ver = 0): string => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error("JWT_SECRET environment variable is required");
   }
 
-  const payload = { id: userId, email, role };
+  const payload = { id: userId, email, role, ver };
 
   return jwt.sign(payload, secret, { expiresIn: "7d" });
 };
@@ -66,7 +66,7 @@ export const login = async (
     }
 
     // Generate token
-    const token = generateToken(user._id.toString(), user.email, user.role);
+    const token = generateToken(user._id.toString(), user.email, user.role, user.tokenVersion ?? 0);
 
     // Update last seen
     user.lastSeen = new Date();
@@ -147,7 +147,7 @@ export const register = async (
     await user.save();
 
     // Generate token
-    const token = generateToken(user._id.toString(), user.email, user.role);
+    const token = generateToken(user._id.toString(), user.email, user.role, user.tokenVersion ?? 0);
 
     // Return user data (without password) and token
     const userResponse = {
@@ -217,10 +217,11 @@ export const logout = async (
       });
     }
 
-    // Update user status
+    // Revokes the presented token, including previously issued refresh
+    // credentials. Intentionally revokes all sessions until the next login.
     await User.findByIdAndUpdate(request.user.id, {
-      isOnline: false,
-      lastSeen: new Date(),
+      $inc: { tokenVersion: 1 },
+      $set: { lastSeen: new Date() },
     });
 
     reply.send({
@@ -253,7 +254,8 @@ export const refreshToken = async (
     const token = generateToken(
       request.user.id,
       request.user.email,
-      request.user.role
+      request.user.role,
+      request.user.tokenVersion ?? 0
     );
 
     // Update last seen

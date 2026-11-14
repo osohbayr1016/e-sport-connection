@@ -24,6 +24,7 @@ export interface IUser extends Document {
   facebookId?: string;
   password?: string;
   role: UserRole;
+  tokenVersion: number;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -97,6 +98,7 @@ const userSchema = new Schema<IUser>(
       enum: Object.values(UserRole),
       default: UserRole.PLAYER,
     },
+    tokenVersion: { type: Number, default: 0, min: 0, select: false },
   },
   {
     timestamps: true,

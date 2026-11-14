@@ -6,6 +6,7 @@ export interface JWTPayload {
   id: string;
   email: string;
   role: string;
+  ver?: number;
 }
 
 export interface AuthenticatedRequest extends FastifyRequest {
@@ -18,6 +19,7 @@ export interface AuthenticatedRequest extends FastifyRequest {
     avatar?: string;
     isVerified: boolean;
     isOnline?: boolean;
+    tokenVersion?: number;
   };
 }
 
@@ -41,7 +43,7 @@ export const authenticateToken = async (
 
     // Get user from database
     const user = await User.findById(decoded.id)
-      .select("_id email name avatar role isVerified isOnline")
+      .select("_id email name avatar role isVerified isOnline +tokenVersion")
       .lean();
 
     if (!user) {
@@ -52,6 +54,10 @@ export const authenticateToken = async (
       return;
     }
 
+    if ((decoded.ver ?? 0) !== (user.tokenVersion ?? 0)) {
+      reply.status(401).send({ success: false, message: "Session revoked, sign in again" });
+      return;
+    }
     request.user = {
       _id: user._id.toString(),
       id: user._id.toString(),
@@ -61,6 +67,7 @@ export const authenticateToken = async (
       avatar: user.avatar,
       isVerified: user.isVerified,
       isOnline: user.isOnline,
+      tokenVersion: user.tokenVersion ?? 0,
     };
   } catch (error) {
     reply.status(403).send({
