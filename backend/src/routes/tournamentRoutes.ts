@@ -194,9 +194,24 @@ const tournamentRoutes: FastifyPluginAsync = async (
       // Relax validation: allow registration deadline to be on/after start date,
       // since registration stays open until admin starts the tournament.
 
+      // Only accept recognized organizer fields. All lifecycle, bracket
+      // and participant counts are created by the tournament engine.
+      const organizerFields = [
+        "name", "description", "game", "startDate", "endDate", "prizePool",
+        "prizeDistribution", "location", "organizer", "organizerLogo",
+        "bannerImage", "rules", "registrationDeadline", "entryFee",
+        "tournamentType", "format",
+      ];
+      const sanitized: Record<string, unknown> = {};
+      for (const key of organizerFields) {
+        if (Object.prototype.hasOwnProperty.call(tournamentData, key)) {
+          sanitized[key] = tournamentData[key];
+        }
+      }
       const newTournament = new Tournament({
-        ...tournamentData,
+        ...sanitized,
         maxSquads: Number(maxSquads),
+        status: "upcoming",
         currentSquads: 0,
         entryFee: tournamentData.tournamentType === "free" ? 0 : tournamentData.entryFee,
       });

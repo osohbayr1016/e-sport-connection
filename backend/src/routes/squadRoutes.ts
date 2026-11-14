@@ -27,8 +27,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
 
       // Get all active squads with their match statistics
       const squads = await Squad.find({ isActive: true })
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .select(
           "name tag logo division level matchStats totalBountyCoinsEarned currentBountyCoins createdAt"
         )
@@ -152,8 +152,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
 
       const [squads, total] = await Promise.all([
         Squad.find(query)
-          .populate("leader", "name email avatar")
-          .populate("members", "name email avatar")
+          .populate("leader", "name avatar")
+          .populate("members", "name avatar")
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(parseInt(limit))
@@ -186,8 +186,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       const { id } = request.params as { id: string };
 
       const squad = await Squad.findById(id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       if (!squad) {
@@ -274,8 +274,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       await newSquad.save();
 
       const populatedSquad = await Squad.findById(newSquad._id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(201).send({
@@ -359,8 +359,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         new: true,
         runValidators: true,
       })
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(200).send({
@@ -603,8 +603,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           success: true,
           message: "Successfully joined squad",
           squad: await Squad.findById(squad._id)
-            .populate("leader", "name email avatar")
-            .populate("members", "name email avatar")
+            .populate("leader", "name avatar")
+            .populate("members", "name avatar")
             .lean(),
         });
       } else {
@@ -831,8 +831,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
           success: true,
           message: "Application approved and user added to squad",
           squad: await Squad.findById(squad._id)
-            .populate("leader", "name email avatar")
-            .populate("members", "name email avatar")
+            .populate("leader", "name avatar")
+            .populate("members", "name avatar")
             .lean(),
         });
       } else {
@@ -1082,8 +1082,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       await squad.save();
 
       const populatedSquad = await Squad.findById(squad._id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(200).send({
@@ -1155,8 +1155,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       }
 
       const populatedSquad = await Squad.findById(squad._id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(200).send({
@@ -1231,8 +1231,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       await squad.save();
 
       const populatedSquad = await Squad.findById(squad._id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(200).send({
@@ -1302,8 +1302,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       }
 
       const populatedSquad = await Squad.findById(squad._id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(200).send({
@@ -1359,8 +1359,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       await squad.save();
 
       const populatedSquad = await Squad.findById(squad._id)
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .lean();
 
       return reply.status(200).send({
@@ -1386,8 +1386,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
 
       const [squads, total] = await Promise.all([
         Squad.find({ game, isActive: true })
-          .populate("leader", "name email avatar")
-          .populate("members", "name email avatar")
+          .populate("leader", "name avatar")
+          .populate("members", "name avatar")
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(parseInt(limit))
@@ -1422,8 +1422,8 @@ const squadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       const squads = await Squad.find({
         $or: [{ leader: userId }, { members: userId }],
       })
-        .populate("leader", "name email avatar")
-        .populate("members", "name email avatar")
+        .populate("leader", "name avatar")
+        .populate("members", "name avatar")
         .sort({ createdAt: -1 })
         .lean();
 

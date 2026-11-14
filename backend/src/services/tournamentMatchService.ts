@@ -142,7 +142,7 @@ export async function generateTournamentMatches(
     if (await TournamentMatch.exists({ tournament: tournamentId }).session(session)) {
       throw new Error("Matches already generated for this tournament");
     }
-    if (!["Single Elimination", "Double Elimination", "Round Robin"].includes(tournament.format)) {
+    if (!["Single Elimination", "Round Robin"].includes(tournament.format)) {
       throw new Error("Unsupported tournament format");
     }
 
@@ -175,6 +175,9 @@ export async function startTournamentWithBrackets(tournamentId: string): Promise
         status: { $in: ["upcoming", "registration_open", "registration_closed"] },
       }, { $set: { status: "ongoing", startDate: new Date() } }, { session, new: true });
       if (!started) throw new Error("Tournament already started, cancelled or missing");
+      if (started.format === "Double Elimination") {
+        throw new Error("Double-elimination progression is not implemented. Choose a supported bracket before starting.");
+      }
       await generateTournamentMatches(tournamentId, session);
     });
   } finally {
