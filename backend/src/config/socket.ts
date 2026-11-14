@@ -81,6 +81,7 @@ export class SocketManager {
         }
         socket.data.userId = user._id.toString();
         socket.data.userEmail = decoded.email;
+        socket.data.tokenVersion = user.tokenVersion ?? 0;
         next();
       } catch (error) {
         next(new Error("Invalid or expired authentication token"));
@@ -88,6 +89,27 @@ export class SocketManager {
     });
 
     this.io.on("connection", async (socket) => {
+      // HTTP logout bumps tokenVersion. Check it again on protected socket
+      // events, not only at initial handshake, so old open sockets cannot
+      // continue writing messages with a revoked credential.
+      const protectedEvents = new Set([
+        "send_message", "mark_read", "stream_chat_message",
+        "stream_reaction", "typing_start", "typing_stop", "update_status",
+      ]);
+      socket.use(async (packet, next) => {
+        try {
+          const event = packet[0];
+          if (!protectedEvents.has(event) || !socket.data.userId) return next();
+          const active = await User.findById(socket.data.userId).select("_id +tokenVersion").lean();
+          if (!active || (active.tokenVersion ?? 0) !== (socket.data.tokenVersion ?? 0)) {
+            socket.disconnect(true);
+            return next(new Error("Session revoked; please sign in again"));
+          }
+          next();
+        } catch (error) {
+          next(new Error("Unable to validate session"));
+        }
+      });
       // Only handle authenticated users
       if (socket.data.userId) {
         const firstConnection = this.connectedUsers.connect(socket.data.userId, socket.id);
