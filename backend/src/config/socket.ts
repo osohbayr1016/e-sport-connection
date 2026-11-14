@@ -524,6 +524,30 @@ export class SocketManager {
         this.broadcastUserStatus(userId, status);
       });
 
+      // The socket may disappear without an explicit leave event. Snapshot its
+      // joined streams before Socket.IO clears the room membership.
+      socket.on("disconnecting", () => {
+        const streamIds = Array.from(socket.rooms)
+          .filter(room => room.startsWith("stream_"))
+          .map(room => room.slice("stream_".length));
+        const userId = socket.data.userId;
+        const sessionId = `socket_${socket.id}`;
+        void Promise.all(streamIds.map(async streamId => {
+          try {
+            await StreamService.removeViewer(streamId, userId, sessionId);
+            this.io!.to(`stream_${streamId}`).emit("stream_viewer_count", {
+              streamId,
+              viewerCount: await StreamViewer.countDocuments({
+                streamSessionId: streamId,
+                isActive: true,
+              }),
+            });
+          } catch (error) {
+            console.error("Error cleaning up disconnected stream viewer:", error);
+          }
+        }));
+      });
+
       // Handle disconnection
       socket.on("disconnect", async () => {
         const userId = socket.data.userId;

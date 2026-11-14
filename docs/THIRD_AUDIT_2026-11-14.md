@@ -41,7 +41,7 @@ Prefer the following internal domains:
 
 - **External bank integration:** a reference typed by an admin does NOT prove settlement. Purchase/refund/payment receipts require signed bank/provider callbacks and independent reconciliation before using real money.
 - **True ledger safety:** embedded `BountyCoin.transactions` remains mutable; migrate to an append-only `WalletOperation` with a unique idempotency key and projections.
-- **Realtime multi-instance:** the new presence registry is process-local. Multiple backend nodes need Redis/Socket.IO adapter and distributed locks.
+- **Realtime stream cleanup:** stream viewers are tracked per socket session and cleaned up when a client disconnects; counts can still become stale if the process crashes and need TTL reconciliation.\n- **Realtime multi-instance:** the new presence registry is process-local. Multiple backend nodes need Redis/Socket.IO adapter and distributed locks.
 - **Bracket formats:** no complete losers-bracket, Swiss, two-stage group playoffs, FFA, seeding or BO3/BO5 map-based validation yet. Double-elimination starts are intentionally blocked.
 - **Financial consistency:** wallet updates from non-tournament paths, retroactive match-score corrections, disputed payouts, and failed post-commit achievement updates need explicit reconciliation and background job handling.
 - **Privacy:** migrate evidence and payment screenshots out of public URLs into private storage with signed expiring reads and retention controls.

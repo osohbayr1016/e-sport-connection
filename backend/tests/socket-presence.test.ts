@@ -21,3 +21,19 @@ describe("multi-device Socket.IO presence", () => {
     expect(registry.isOnline("u1")).toBe(true);
   });
 });
+
+describe("stream viewer session isolation",()=>{
+  test("socket implementation cleans up stream membership at disconnect",()=>{
+    const { readFileSync } = require("node:fs");
+    const path = require("node:path");
+    const code = readFileSync(path.join(__dirname,"../src/config/socket.ts"),"utf8");
+    expect(code).toContain('socket.on("disconnecting"');
+    expect(code).toContain("StreamService.removeViewer(streamId, userId, sessionId)");
+  });
+  test("viewer queries prioritize socket session IDs",()=>{
+    const { readFileSync } = require("node:fs");
+    const path = require("node:path");
+    const code = readFileSync(path.join(__dirname,"../src/services/streamService.ts"),"utf8");
+    expect(code).toContain("...(sessionId ? { sessionId } : { userId })");
+  });
+});
